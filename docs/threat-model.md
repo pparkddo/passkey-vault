@@ -45,7 +45,7 @@ Running the server on a different host from the requester satisfies this. If the
 | Call the approver API to add a passkey or replace items | Every change needs a signature (with user verification) from a registered passkey over a challenge that binds a single-use nonce and the operation's content |
 | Add a passkey to obtain the master key | Adding a passkey needs an existing passkey's signature and its PRF output to unwrap the key; the server never has it |
 | Replay an approval signature for another request | The challenge covers id, secret name, command and public key; ids are random and single-use |
-| Swap ciphertext between requests, or run a different command | The OAEP label covers id, command and public key; decryption fails otherwise |
+| Swap ciphertext between requests, or trick an honest requester into a command the approver did not see | The OAEP label covers id, command and public key; decryption fails otherwise |
 | Edit storage to move item ciphertext or change the displayed site/account | The item AAD covers name, site and account; decryption fails in the browser |
 | Collect the same secret twice | Delivered once, then deleted; later reads return 410 |
 | Drive a browser against the requester door (CSRF, DNS rebinding) | `Host` allow-list, JSON-only bodies, no CORS |
@@ -55,14 +55,17 @@ Running the server on a different host from the requester satisfies this. If the
 
 ## Accepted limits
 
-1. **A malicious request.** The requester can ask to run a command that sends the secret somewhere
-   else. The approval screen shows the secret, site, account and full command; reading it is the
-   defence. Approving without reading it defeats the system.
+1. **A malicious requester.** The requester can ask to run a command that sends the secret somewhere
+   else, and once it has decrypted the secret it can use it however it likes: the command binding
+   protects honest requesters and stops other programs from using the ciphertext, but it cannot
+   constrain the program that holds the plaintext. The approval screen shows the secret, site, account
+   and full command; deciding whether to trust that request is the approver's job.
 2. **Exposure while the approved command runs.** Anything that can inspect that process (same user,
    root) can read the secret while it runs. An approval releases the secret to that command.
 3. **A compromised server host or approver device.** Out of scope.
-4. **Denial of service.** Anyone who can reach the approver door can deny requests (denial needs no
-   signature), and requesters can keep up to 20 requests pending. Neither reveals a secret.
+4. **Visibility and denial of service.** Anyone who can reach the approver door can read pending
+   requests (secret names, sites, accounts, commands) and deny them (denial needs no signature).
+   Requesters can keep up to 20 requests pending. None of this reveals a secret.
 5. **Storage integrity.** Someone who can write the vault document can delete data or rewrite the
    audit log. They still cannot decrypt anything, and tampered items fail to decrypt.
 6. **Losing every passkey.** There is no recovery key. Register at least two passkeys.

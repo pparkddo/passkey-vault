@@ -32,7 +32,8 @@ PASSKEY_VAULT_STORAGE=mongodb://mongodb/passkey_vault \
 ```
 
 Or point `PASSKEY_VAULT_STORAGE` at an existing database. With a database backend, `/data` still
-holds the setup code until setup is complete.
+holds the setup code until setup is complete. The server may restart a few times while the database
+starts. Run a single server instance per vault: pending requests live in its memory.
 
 ## Run without Docker
 
@@ -118,6 +119,8 @@ gate that shows the file-level diff and asks for the commit hash before switchin
    `sudo /Library/PasskeyVault/bin/deploy /path/to/passkey-vault <40-character commit>`.
 4. Read the setup code with `sudo cat /Library/PasskeyVault/data/setup-code`.
 5. Never allow passwordless `sudo` for the requester's account.
+
+The example installs only the core dependencies (`deploy/requirements.lock`), so it uses file storage.
 
 `deploy.sh` runs `git` as the invoking user (never as root), refuses symlinks in the archive, checks
 that the interpreter is root-owned, builds a virtualenv per lock-file hash, and keeps old releases for

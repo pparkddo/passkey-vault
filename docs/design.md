@@ -119,7 +119,9 @@ pending at once.
 3. The server verifies the registration and deletes the setup code.
 
 If `create` does not return PRF output (some platforms only return it on sign-in), the page signs in
-once more with the new passkey. Authenticators that report no PRF support are rejected.
+once more with the new passkey. Authenticators that report no PRF support are rejected. The rejected
+passkey has already been created on the authenticator by then; the browser offers no way to delete it,
+so the approver removes it from their passkey manager.
 
 ### Items and passkeys
 
@@ -150,7 +152,9 @@ an `Origin` header equal to the configured origin.
 ## Storage
 
 The vault is one small document with a revision number. Writers use compare-and-swap on the revision,
-so several server processes can share one database safely.
+so concurrent writers never lose an update, even through a shared database. Requests and nonces, however,
+live in process memory: run **one** server instance per vault (a second instance would not see the
+first one's requests).
 
 | Backend | `--storage` / `PASSKEY_VAULT_STORAGE` | Vault | Audit log |
 |---|---|---|---|

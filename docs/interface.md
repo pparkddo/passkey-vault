@@ -25,7 +25,7 @@ RFC 2119.
 |---|---|
 | `secret` | Vault item name, `^[A-Za-z0-9._-]{1,64}$`; the item must exist |
 | `command` | The command exactly as it will be shown and run. 1–4096 UTF-8 bytes. No C0/C1 control characters (so no line breaks or tabs), no bidi controls (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), no U+2028/U+2029 |
-| `pubkey` | RSA public key as SPKI DER, base64url without padding. 2048–4096 bits, exponent 65537 |
+| `pubkey` | RSA public key as SPKI DER, base64url without padding. 2048–4096 bits (a multiple of 8), exponent 65537 |
 
 `201 Created`:
 
@@ -73,6 +73,7 @@ Errors are `{"error": "<code>", "message": "<text>"}`. Codes are stable; message
 | 405 | `method_not_allowed` | Wrong method |
 | 409 | `vault_not_initialized` | The vault has not been set up |
 | 410 | `consumed` | The ciphertext was already delivered |
+| 411 | `length_required` | No `Content-Length` header |
 | 413 | `payload_too_large` | Body over 64 KiB |
 | 415 | `unsupported_media_type` | `Content-Type` is not `application/json` |
 | 421 | `bad_host` | `Host` is not accepted by the requester door |
@@ -104,9 +105,9 @@ label = lp("passkey-vault/oaep-label/v1")
 ```
 
 `command` is the exact string the requester sent (no normalisation). If any byte differs, decryption
-fails. This stops a ciphertext from being moved to another request, and stops the secret from being
-used with a command other than the one the approver saw. Requesters MUST run exactly the `command`
-they used for decryption.
+fails. This stops a ciphertext from being moved to another request or decrypted for a command other
+than the one the approver saw. Requesters MUST run exactly the `command` they used for decryption and
+nothing else. (A requester that ignores this rule already holds the plaintext; see the threat model.)
 
 ### 2.4 Approve challenge (informative)
 

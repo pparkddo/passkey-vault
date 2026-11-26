@@ -40,7 +40,7 @@ extension; [`tools/prf-test.html`](tools/prf-test.html) checks yours.
 ```sh
 docker compose up -d
 docker compose exec passkey-vault cat /data/setup-code
-open http://localhost:8740           # set up the vault, add a secret
+# then open http://localhost:8740 to set up the vault and add a secret
 ```
 
 Ask for a secret with the reference requester:

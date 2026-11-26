@@ -75,8 +75,8 @@ $('#f-setup').addEventListener('submit', (ev) => {
         registration: created.json, wrapped_master_key: wrappedToJson(wrapped),
       });
       $('#setup-code').value = '';
-      say('Vault created. Add a second passkey so you can still open it if this device is lost.', 'ok');
       await refresh();
+      say('Vault created. Add a second passkey so you can still open it if this device is lost.', 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     }
@@ -114,8 +114,8 @@ $('#f-item').addEventListener('submit', (ev) => {
       ev.target.reset();
       $('#item-summary').textContent = 'Add a secret';
       $('#item-panel').open = false;
-      say(`Saved ${name}.`, 'ok');
       await refresh();
+      say(`Saved ${name}.`, 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     } finally {
@@ -139,8 +139,8 @@ async function deleteItem(name) {
   await busy(allButtons(), async () => {
     try {
       await api('POST', `/api/items/${encodeURIComponent(name)}/delete`, await signOnly('delete-item', name));
-      say(`Deleted ${name}.`, 'ok');
       await refresh();
+      say(`Deleted ${name}.`, 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     }
@@ -169,8 +169,8 @@ $('#f-passkey').addEventListener('submit', (ev) => {
       });
       ev.target.reset();
       ev.target.closest('details').open = false;
-      say(`Added passkey ${name}.`, 'ok');
       await refresh();
+      say(`Added passkey ${name}.`, 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     }
@@ -182,8 +182,8 @@ async function deleteCredential(c) {
   await busy(allButtons(), async () => {
     try {
       await api('POST', `/api/credentials/${encodeURIComponent(c.id)}/delete`, await signOnly('delete-credential', b64urlDecode(c.id)));
-      say(`Removed passkey ${c.name}.`, 'ok');
       await refresh();
+      say(`Removed passkey ${c.name}.`, 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     }

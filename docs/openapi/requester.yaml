@@ -45,6 +45,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "411": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "421": { $ref: "#/components/responses/Error" }
@@ -83,7 +84,7 @@ components:
       description: |
         Error. `error` is a stable machine-readable code: bad_request, invalid_secret_name,
         invalid_command, invalid_pubkey, key_too_small, unknown_secret, not_found, consumed,
-        vault_not_initialized, payload_too_large, unsupported_media_type, bad_host, too_many_pending,
+        vault_not_initialized, length_required, payload_too_large, unsupported_media_type, bad_host, too_many_pending,
         method_not_allowed.
       content:
         application/json:
@@ -112,7 +113,7 @@ components:
         pubkey:
           type: string
           pattern: "^[A-Za-z0-9_-]+$"
-          description: RSA public key, SPKI DER, base64url without padding. 2048-4096 bits, exponent 65537.
+          description: RSA public key, SPKI DER, base64url without padding. 2048-4096 bits (a multiple of 8), exponent 65537.
     CreatedRequest:
       type: object
       required: [id, approve_url, expires_at]
