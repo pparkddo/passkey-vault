@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: pvtest
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 2s --health-retries 30
+      mongodb:
+        image: mongo:8
+        ports: ["27017:27017"]
+    env:
+      PV_TEST_POSTGRES_URL: postgresql://postgres:pvtest@127.0.0.1:5432/postgres
+      PV_TEST_MONGODB_URL: mongodb://127.0.0.1:27017/passkey_vault_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: uv sync --all-extras --locked
+      - name: Python tests (server, storage backends, OpenAPI, vectors)
+        run: uv run python -m unittest discover -s tests -v
+      - name: JavaScript tests
+        run: node --test 'tests/js/*.test.mjs'
+      - name: End-to-end in Chromium
+        run: |
+          uv run playwright install --with-deps chromium
+          uv run python tests/e2e_virtual_authenticator.py
+      - name: Lock files match uv.lock
+        run: |
+          uv export --no-dev --no-emit-project --format requirements-txt --quiet | diff - deploy/requirements.lock
+          uv export --no-dev --no-emit-project --extra postgres --extra mongodb --format requirements-txt --quiet | diff - deploy/requirements-db.lock
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - run: uv sync --locked
+      - name: Image with file, PostgreSQL and MongoDB storage
+        run: PV_DOCKER_TEST=1 uv run python -m unittest tests/test_docker.py -v

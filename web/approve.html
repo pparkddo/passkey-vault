@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Approve request | passkey-vault</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+<script type="module" src="/js/approve.js"></script>
+</head>
+<body class="page-approve">
+<header class="masthead">
+  <a class="wordmark" href="/">passkey-vault</a>
+  <a class="masthead-link" href="/">Manage vault</a>
+</header>
+
+<main>
+  <section id="request" class="request" hidden aria-labelledby="r-secret">
+    <p class="lede">A request to use the secret</p>
+    <h1 id="r-secret" class="secret-name"></h1>
+    <dl class="where">
+      <div><dt>Site</dt><dd id="r-site"></dd></div>
+      <div><dt>Account</dt><dd id="r-account"></dd></div>
+    </dl>
+
+    <figure class="command">
+      <div class="fuse" aria-hidden="true"><span id="fuse" class="fuse-burn"></span></div>
+      <figcaption>for one run of this command</figcaption>
+      <pre id="r-command"></pre>
+    </figure>
+
+    <p class="expiry"><span id="r-expires" class="expiry-time"></span> left to decide</p>
+    <p class="guidance">Approve only if you expected this request and the command sends the secret
+      nowhere you don’t intend. Approving lets it be used once, for exactly this command.</p>
+    <p id="r-warning" class="notice notice-error" role="alert" hidden></p>
+
+    <div class="decision" id="decision">
+      <button id="b-approve" class="button button-approve" type="button">Approve with passkey</button>
+      <button id="b-deny" class="button button-deny" type="button">Deny</button>
+    </div>
+  </section>
+
+  <div id="status" class="status-area" aria-live="polite"></div>
+</main>
+</body>
+</html>

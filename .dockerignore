@@ -1,0 +1,6 @@
+*
+!server/
+!web/
+!deploy/requirements.lock
+!deploy/requirements-db.lock
+**/__pycache__

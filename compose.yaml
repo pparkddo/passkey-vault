@@ -1,0 +1,66 @@
+# passkey-vault with Docker Compose.
+#
+#   PASSKEY_VAULT_ORIGIN=https://vault.example.com docker compose up -d                 # file storage
+#   POSTGRES_PASSWORD=... PASSKEY_VAULT_STORAGE=postgresql://passkey_vault:...@postgres/passkey_vault \
+#     docker compose --profile postgres up -d                                           # PostgreSQL storage
+#   PASSKEY_VAULT_STORAGE=mongodb://mongodb/passkey_vault \
+#     docker compose --profile mongodb up -d                                            # MongoDB storage
+#   docker compose exec passkey-vault cat /data/setup-code                              # first-time setup code
+#
+# Without PASSKEY_VAULT_ORIGIN the approval page is served at http://localhost:8740 for local trials.
+# Ports are published on 127.0.0.1 by default. For real use, put an HTTPS reverse proxy in front of port
+# 8740. If requesters run on other hosts, publish 8741 on a private interface (PASSKEY_VAULT_PUBLISH) and
+# list the host names they use in PASSKEY_VAULT_REQUESTER_HOSTS. See docs/deployment.md.
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+  restart: unless-stopped
+
+services:
+  passkey-vault:
+    <<: *hardening
+    build:
+      context: .
+      args:
+        LOCK: ${PASSKEY_VAULT_LOCK:-requirements-db.lock}
+    image: passkey-vault:local
+    command: ["--origin", "${PASSKEY_VAULT_ORIGIN:-http://localhost:8740}"]
+    environment:
+      # Empty means file storage in /data. The profiles below set this through .env or the shell.
+      PASSKEY_VAULT_STORAGE: ${PASSKEY_VAULT_STORAGE:-}
+      PASSKEY_VAULT_REQUESTER_HOSTS: ${PASSKEY_VAULT_REQUESTER_HOSTS:-}
+    ports:
+      - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8740:8740"
+      - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8741:8741"
+    volumes:
+      - vault-data:/data
+
+  postgres:
+    <<: *hardening
+    profiles: [postgres]
+    image: postgres:17-alpine
+    read_only: false
+    cap_drop: []
+    environment:
+      POSTGRES_DB: passkey_vault
+      POSTGRES_USER: passkey_vault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}  # required with this profile; postgres refuses to start without it
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mongodb:
+    <<: *hardening
+    profiles: [mongodb]
+    image: mongo:8
+    read_only: false
+    cap_drop: []
+    volumes:
+      - mongodb-data:/data/db
+
+volumes:
+  vault-data:
+  postgres-data:
+  mongodb-data:

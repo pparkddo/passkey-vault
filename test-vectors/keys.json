@@ -1,0 +1,22 @@
+{
+  "note": "passkey-vault test vectors v1. Bytes are hex; keys and DER are base64url without padding. Test-only keys: never use them.",
+  "rule": "PRF input = SHA-256('passkey-vault/prf-salt/v1'); wrap key = HKDF-SHA256(ikm=PRF output, salt='passkey-vault/hkdf-salt/v1', info='passkey-vault/wrap-key/v1', L=32); wrap = AES-256-GCM(wrap key, iv, master key, AAD=lp('passkey-vault/wrap/v1')||lp(credential_id)); item = AES-256-GCM(master key, iv, UTF-8 secret, AAD=lp('passkey-vault/item/v1')||lp(name)||lp(site)||lp(account)). Ciphertext hex includes the 16-byte tag",
+  "prf_salt_hex": "9f54e7328285bc86817a09c3006b92ac886c357e36da3c2b6e8f0f45bafc80a0",
+  "prf_output_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "wrap_key_hex": "8cef0222b2e5b91936e6be03c0d6bd60d25e52a96328d66920e7712aab7022e9",
+  "master_key_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283",
+  "credential_id_hex": "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee",
+  "wrap_aad_hex": "00000015706173736b65792d7661756c742f777261702f76310000001ec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee",
+  "wrap_iv_hex": "c8c9cacbcccdcecfd0d1d2d3",
+  "wrapped_master_key_hex": "ac133436b6b34a6d297deef9a05c190283b457abbf26f63da438ea4596f6e330dec7fe0ad2a50de047402efea5965397",
+  "item": {
+    "name": "github",
+    "site": "github.com",
+    "account": "me@example.com"
+  },
+  "item_aad_hex": "00000015706173736b65792d7661756c742f6974656d2f7631000000066769746875620000000a6769746875622e636f6d0000000e6d65406578616d706c652e636f6d",
+  "item_iv_hex": "32333435363738393a3b3c3d",
+  "item_plaintext": "hunter2 ✓ geheim",
+  "item_ciphertext_hex": "90e650328906ce81393135fd360b9cb3cf7a21736e796460a387f3daebb50500504c",
+  "must_fail_item_with_account": "me@example.org"
+}

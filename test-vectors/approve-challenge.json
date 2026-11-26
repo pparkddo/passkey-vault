@@ -1,0 +1,27 @@
+{
+  "note": "passkey-vault test vectors v1. Bytes are hex; keys and DER are base64url without padding. Test-only keys: never use them.",
+  "rule": "SHA-256(lp('passkey-vault/approve/v1') || lp(id) || lp(secret) || lp(command) || lp(pubkey_der))",
+  "cases": [
+    {
+      "id": "Q2v9b3nqk1mJt0x4H8sRZw",
+      "secret": "github",
+      "command": "gh auth login --with-token",
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwlVT7ChYSxtBB0ubrIwYLMXNOr1H2nbjrxZTG2e2SOY9ujWAO_WIE3F-VVnsoHflTR_bDWBBGDOjSe39cRcWKax4KA4kebze8Qnz3TgghLvDB_odi1Uquq6QLc5ldTSTm2ktBFoTBygoc5nqVhKhxSCpJKR5P_jq5n_pic4-CE6AIx8Ze0KNzuLFbG9twxTSd_H3ZpaHPFdSQ3lfHW0lx_sb7yyj3TqxJXTYAWYx5TPqyI8Q4LfgEtf3kXSHdqnRTxZmHVrnK88l3mlC9B5TwE0kbe0pnbLP6p5O8OGKnwG1VooJiLt-9zCCpT9F95rCJCPBbOtRmcf-1moEZsNRcwIDAQAB",
+      "challenge_hex": "9cbcf1f3f84aaa457cdf4801208dfa6202ffbe2bcac240d4c6e211d3b558420a"
+    },
+    {
+      "id": "Q2v9b3nqk1mJt0x4H8sRZw",
+      "secret": "example.com",
+      "command": "login --site bücher.example \"with spaces\" ✓",
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwlVT7ChYSxtBB0ubrIwYLMXNOr1H2nbjrxZTG2e2SOY9ujWAO_WIE3F-VVnsoHflTR_bDWBBGDOjSe39cRcWKax4KA4kebze8Qnz3TgghLvDB_odi1Uquq6QLc5ldTSTm2ktBFoTBygoc5nqVhKhxSCpJKR5P_jq5n_pic4-CE6AIx8Ze0KNzuLFbG9twxTSd_H3ZpaHPFdSQ3lfHW0lx_sb7yyj3TqxJXTYAWYx5TPqyI8Q4LfgEtf3kXSHdqnRTxZmHVrnK88l3mlC9B5TwE0kbe0pnbLP6p5O8OGKnwG1VooJiLt-9zCCpT9F95rCJCPBbOtRmcf-1moEZsNRcwIDAQAB",
+      "challenge_hex": "b8bf4481b8dd61fb5d91de1bef19e4085613742bfd889f078285e2d5a03c4063"
+    },
+    {
+      "id": "AAAAAAAAAAAAAAAAAAAAAA",
+      "secret": "kr.site",
+      "command": "curl -u me:$SECRET https://example.com/api",
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwlVT7ChYSxtBB0ubrIwYLMXNOr1H2nbjrxZTG2e2SOY9ujWAO_WIE3F-VVnsoHflTR_bDWBBGDOjSe39cRcWKax4KA4kebze8Qnz3TgghLvDB_odi1Uquq6QLc5ldTSTm2ktBFoTBygoc5nqVhKhxSCpJKR5P_jq5n_pic4-CE6AIx8Ze0KNzuLFbG9twxTSd_H3ZpaHPFdSQ3lfHW0lx_sb7yyj3TqxJXTYAWYx5TPqyI8Q4LfgEtf3kXSHdqnRTxZmHVrnK88l3mlC9B5TwE0kbe0pnbLP6p5O8OGKnwG1VooJiLt-9zCCpT9F95rCJCPBbOtRmcf-1moEZsNRcwIDAQAB",
+      "challenge_hex": "b093c404ac0497b3dfabe1d03a6a5af5d832e93ccf4984b8e25d0dded9b79bde"
+    }
+  ]
+}

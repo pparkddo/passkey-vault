@@ -1,0 +1,392 @@
+openapi: 3.1.0
+info:
+  title: passkey-vault approver API
+  version: "1"
+  summary: Internal API between the approval page and the server.
+  description: |
+    Used only by the bundled approval page (web/). It is not a stable public contract and may change
+    with the page. Documented for review and testing.
+
+    Every call that changes the vault carries a WebAuthn assertion (user verification required) from
+    a registered passkey. Its challenge is SHA-256 over length-prefixed fields that bind a single-use
+    nonce (from POST /api/nonce) and the content of the operation; see docs/design.md section 3.1.
+    POST requests must send an `Origin` header equal to the configured origin.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://vault.example.com
+    description: approver door behind an HTTPS reverse proxy
+tags:
+  - name: state
+  - name: requests
+  - name: setup
+  - name: items
+  - name: passkeys
+paths:
+  /api/state:
+    get:
+      tags: [state]
+      operationId: getState
+      summary: Vault overview
+      description: Passkeys (with their wrapped master keys), item metadata and pending requests. No plaintext.
+      responses:
+        "200":
+          description: State.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/State" }
+  /api/nonce:
+    post:
+      tags: [state]
+      operationId: createNonce
+      summary: Get a single-use nonce for an operation challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [op]
+              properties:
+                op: { enum: [setup, add-credential, put-item, delete-item, delete-credential] }
+      responses:
+        "200":
+          description: Nonce valid for 5 minutes, bound to `op`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce]
+                properties:
+                  nonce: { $ref: "#/components/schemas/Base64Url" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/setup:
+    post:
+      tags: [setup]
+      operationId: setup
+      summary: Create the vault with its first passkey
+      description: |
+        Needs the one-time setup code the server wrote to its data directory. The registration
+        challenge is op_challenge("register", nonce, name).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setup_code, nonce, name, registration, wrapped_master_key]
+              properties:
+                setup_code: { type: string }
+                nonce: { $ref: "#/components/schemas/Base64Url" }
+                name: { $ref: "#/components/schemas/Label" }
+                registration: { $ref: "#/components/schemas/RegistrationCredential" }
+                wrapped_master_key: { $ref: "#/components/schemas/Wrapped" }
+      responses:
+        "201":
+          description: Vault created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, credential_id]
+                properties:
+                  status: { const: initialized }
+                  credential_id: { $ref: "#/components/schemas/Base64Url" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/requests/{id}:
+    get:
+      tags: [requests]
+      operationId: getRequest
+      summary: A request with the encrypted item it asks for
+      parameters: [{ $ref: "#/components/parameters/RequestId" }]
+      responses:
+        "200":
+          description: Request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestView" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/requests/{id}/approve:
+    post:
+      tags: [requests]
+      operationId: approveRequest
+      summary: Approve with an assertion and the re-encrypted secret
+      description: |
+        The assertion's challenge is approve_challenge(id, secret, command, pubkey). The ciphertext is
+        RSA-OAEP to the requester's key with the label from docs/interface.md.
+      parameters: [{ $ref: "#/components/parameters/RequestId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assertion, ciphertext]
+              properties:
+                assertion: { $ref: "#/components/schemas/AuthenticationCredential" }
+                ciphertext: { $ref: "#/components/schemas/Base64Url" }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/requests/{id}/deny:
+    post:
+      tags: [requests]
+      operationId: denyRequest
+      summary: Deny (no signature needed)
+      parameters: [{ $ref: "#/components/parameters/RequestId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/items:
+    post:
+      tags: [items]
+      operationId: putItem
+      summary: Add or replace an item
+      description: Challenge op_challenge("put-item", nonce, name, site, account).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nonce, name, site, account, iv, ct, assertion]
+              properties:
+                nonce: { $ref: "#/components/schemas/Base64Url" }
+                name: { $ref: "#/components/schemas/SecretName" }
+                site: { $ref: "#/components/schemas/Meta" }
+                account: { $ref: "#/components/schemas/Meta" }
+                iv: { $ref: "#/components/schemas/Base64Url" }
+                ct: { $ref: "#/components/schemas/Base64Url" }
+                assertion: { $ref: "#/components/schemas/AuthenticationCredential" }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/items/{name}/delete:
+    post:
+      tags: [items]
+      operationId: deleteItem
+      summary: Delete an item
+      description: Challenge op_challenge("delete-item", nonce, name).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/SecretName" }
+      requestBody: { $ref: "#/components/requestBodies/Signed" }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/credentials:
+    post:
+      tags: [passkeys]
+      operationId: addCredential
+      summary: Add a passkey
+      description: |
+        Registration challenge op_challenge("register", nonce, name); the assertion by an already
+        registered passkey uses op_challenge("add-credential", nonce, new_credential_id_bytes, name).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nonce, name, registration, wrapped_master_key, assertion]
+              properties:
+                nonce: { $ref: "#/components/schemas/Base64Url" }
+                name: { $ref: "#/components/schemas/Label" }
+                registration: { $ref: "#/components/schemas/RegistrationCredential" }
+                wrapped_master_key: { $ref: "#/components/schemas/Wrapped" }
+                assertion: { $ref: "#/components/schemas/AuthenticationCredential" }
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, credential_id]
+                properties:
+                  status: { const: ok }
+                  credential_id: { $ref: "#/components/schemas/Base64Url" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/credentials/{id}/delete:
+    post:
+      tags: [passkeys]
+      operationId: deleteCredential
+      summary: Remove a passkey (never the last one)
+      description: Challenge op_challenge("delete-credential", nonce, credential_id_bytes).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Base64Url" }
+      requestBody: { $ref: "#/components/requestBodies/Signed" }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+components:
+  parameters:
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" }
+  requestBodies:
+    Signed:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [nonce, assertion]
+            properties:
+              nonce: { $ref: "#/components/schemas/Base64Url" }
+              assertion: { $ref: "#/components/schemas/AuthenticationCredential" }
+  responses:
+    Status:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: { type: string }
+    Error:
+      description: Error with a stable `error` code.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error: { type: string }
+              message: { type: string }
+  schemas:
+    Base64Url: { type: string, pattern: "^[A-Za-z0-9_-]*$" }
+    Timestamp: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+    SecretName: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
+    Label: { type: string, minLength: 1, maxLength: 64 }
+    Meta: { type: string, maxLength: 200 }
+    Wrapped:
+      type: object
+      description: AES-256-GCM(wrap key, iv, master key, AAD = lp("passkey-vault/wrap/v1") || lp(credential_id)).
+      required: [iv, ct]
+      properties:
+        iv: { $ref: "#/components/schemas/Base64Url" }
+        ct: { $ref: "#/components/schemas/Base64Url" }
+    State:
+      type: object
+      required: [initialized, rp_id, credentials, items, pending]
+      properties:
+        initialized: { type: boolean }
+        rp_id: { type: string }
+        credentials:
+          type: array
+          items:
+            type: object
+            required: [id, name, created_at, wrapped_master_key]
+            properties:
+              id: { $ref: "#/components/schemas/Base64Url" }
+              name: { type: string }
+              created_at: { $ref: "#/components/schemas/Timestamp" }
+              wrapped_master_key: { $ref: "#/components/schemas/Wrapped" }
+        items:
+          type: array
+          items:
+            type: object
+            required: [name, site, account, updated_at]
+            properties:
+              name: { $ref: "#/components/schemas/SecretName" }
+              site: { type: string }
+              account: { type: string }
+              updated_at: { $ref: "#/components/schemas/Timestamp" }
+        pending:
+          type: array
+          items:
+            type: object
+            required: [id, secret, command, expires_at]
+            properties:
+              id: { type: string }
+              secret: { $ref: "#/components/schemas/SecretName" }
+              command: { type: string }
+              expires_at: { $ref: "#/components/schemas/Timestamp" }
+    RequestView:
+      type: object
+      required: [id, secret, command, pubkey, created_at, expires_at, status, item]
+      properties:
+        id: { type: string }
+        secret: { $ref: "#/components/schemas/SecretName" }
+        command: { type: string }
+        pubkey: { $ref: "#/components/schemas/Base64Url" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        status: { enum: [pending, approved, denied, expired, consumed] }
+        item:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [name, site, account, iv, ct]
+              properties:
+                name: { $ref: "#/components/schemas/SecretName" }
+                site: { type: string }
+                account: { type: string }
+                iv: { $ref: "#/components/schemas/Base64Url" }
+                ct: { $ref: "#/components/schemas/Base64Url" }
+    RegistrationCredential:
+      type: object
+      description: WebAuthn PublicKeyCredential (attestation) in JSON form, binary fields base64url.
+      required: [id, rawId, type, response]
+      properties:
+        id: { type: string }
+        rawId: { $ref: "#/components/schemas/Base64Url" }
+        type: { const: public-key }
+        response:
+          type: object
+          required: [clientDataJSON, attestationObject]
+          properties:
+            clientDataJSON: { $ref: "#/components/schemas/Base64Url" }
+            attestationObject: { $ref: "#/components/schemas/Base64Url" }
+            transports: { type: array, items: { type: string } }
+    AuthenticationCredential:
+      type: object
+      description: |
+        WebAuthn PublicKeyCredential (assertion) in JSON form, binary fields base64url.
+        clientExtensionResults is always empty: PRF output never leaves the browser.
+      required: [id, rawId, type, response]
+      properties:
+        id: { type: string }
+        rawId: { $ref: "#/components/schemas/Base64Url" }
+        type: { const: public-key }
+        clientExtensionResults: { type: object, maxProperties: 0 }
+        response:
+          type: object
+          required: [clientDataJSON, authenticatorData, signature]
+          properties:
+            clientDataJSON: { $ref: "#/components/schemas/Base64Url" }
+            authenticatorData: { $ref: "#/components/schemas/Base64Url" }
+            signature: { $ref: "#/components/schemas/Base64Url" }
+            userHandle: { type: ["string", "null"] }

@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: passkey-vault requester API
+  version: "1"
+  summary: Ask for one secret for one command, then collect it once after a passkey approval.
+  description: |
+    The public contract for requesters (CLIs, agents). Served on the requester door, which listens on
+    loopback only and must never be exposed beyond the host.
+
+    The secret is returned encrypted with RSA-OAEP to a one-time key the requester generated, with an
+    OAEP label that binds the request id, the exact command and the public key. See docs/interface.md
+    for the byte-level rules and test-vectors/ for vectors.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://127.0.0.1:8741
+    description: requester door (loopback only)
+tags:
+  - name: requests
+paths:
+  /requests:
+    post:
+      tags: [requests]
+      operationId: createRequest
+      summary: Create a request
+      description: |
+        Creates a pending request that expires 5 minutes later. Send the returned `approve_url` to the
+        approver; it shows the secret name, site, account and the full command before they approve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRequest" }
+            example:
+              secret: github
+              command: gh auth login --with-token
+              pubkey: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
+      responses:
+        "201":
+          description: Request created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedRequest" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "421": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /requests/{id}:
+    get:
+      tags: [requests]
+      operationId: collectRequest
+      summary: Wait for and collect the result
+      description: |
+        Long-polls for up to `wait` seconds while the request is pending. An `approved` response is
+        returned exactly once; the server deletes the ciphertext as it answers, and later calls get
+        `410 consumed`. `denied` and `expired` are final.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/RequestId" }
+        - name: wait
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 30, default: 0 }
+      responses:
+        "200":
+          description: Current state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "421": { $ref: "#/components/responses/Error" }
+components:
+  responses:
+    Error:
+      description: |
+        Error. `error` is a stable machine-readable code: bad_request, invalid_secret_name,
+        invalid_command, invalid_pubkey, key_too_small, unknown_secret, not_found, consumed,
+        vault_not_initialized, payload_too_large, unsupported_media_type, bad_host, too_many_pending,
+        method_not_allowed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    RequestId:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{22}$"
+      description: 128 random bits, base64url.
+    CreateRequest:
+      type: object
+      additionalProperties: true
+      required: [secret, command, pubkey]
+      properties:
+        secret:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+          description: Name of the vault item.
+        command:
+          type: string
+          minLength: 1
+          description: |
+            The command, exactly as it will be shown to the approver and run. 1-4096 UTF-8 bytes; no
+            control characters (U+0000-U+001F, U+007F-U+009F), no bidi controls (U+200E, U+200F,
+            U+202A-U+202E, U+2066-U+2069), no U+2028/U+2029.
+        pubkey:
+          type: string
+          pattern: "^[A-Za-z0-9_-]+$"
+          description: RSA public key, SPKI DER, base64url without padding. 2048-4096 bits, exponent 65537.
+    CreatedRequest:
+      type: object
+      required: [id, approve_url, expires_at]
+      properties:
+        id: { $ref: "#/components/schemas/RequestId" }
+        approve_url: { type: string, format: uri }
+        expires_at:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    RequestResult:
+      oneOf:
+        - type: object
+          required: [status]
+          additionalProperties: false
+          properties:
+            status: { enum: [pending, denied, expired] }
+        - type: object
+          required: [status, ciphertext]
+          additionalProperties: false
+          properties:
+            status: { const: approved }
+            ciphertext:
+              type: string
+              pattern: "^[A-Za-z0-9_-]+$"
+              description: RSA-OAEP(SHA-256, MGF1-SHA-256, label) ciphertext, base64url.
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }

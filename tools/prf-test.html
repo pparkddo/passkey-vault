@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRF check | passkey-vault</title>
+<!--
+  passkey-vault PRF check: a standalone single page with no external resources.
+  Open it over HTTPS (or http://localhost) on the device and browser you want to approve with.
+
+  It checks:
+    1) whether creating a passkey reports PRF support, and whether create already returns PRF output
+    2) whether two sign-ins with the same passkey return the same PRF output
+    3) WebCrypto HKDF-SHA256, AES-256-GCM and RSA-OAEP (SHA-256, with a label)
+
+  Nothing is sent anywhere. Only the first 8 bytes of SHA-256(PRF output) are shown.
+  The test passkey stays in the device's password manager under the user name "prf-check";
+  delete it afterwards. Do not run this on the host name you will use for the real vault.
+-->
+<style>
+  :root { color-scheme: light dark; --paper:#eef1f4; --sheet:#fff; --ink:#1c2633; --steel:#5b6b7c; --rule:#d5dbe2; --ok:#1f6b57; --bad:#9a2b3b; }
+  @media (prefers-color-scheme: dark) { :root { --paper:#11161c; --sheet:#18202a; --ink:#e3e8ee; --steel:#93a2b2; --rule:#2a3542; --ok:#3f9d82; --bad:#e0707f; } }
+  body { font: 17px/1.5 "Avenir Next", Avenir, system-ui, sans-serif; color: var(--ink); background: var(--paper); margin: 0; padding: 16px; }
+  main { max-width: 38rem; margin: 0 auto; }
+  h1 { font-size: 1.56rem; letter-spacing: -0.015em; }
+  .meta { color: var(--steel); font-size: .85rem; overflow-wrap: anywhere; }
+  button { font: 600 1rem/1.2 inherit; font-family: inherit; min-height: 48px; width: 100%; margin: 6px 0; border-radius: 10px; border: 1.5px solid var(--rule); background: var(--sheet); color: var(--ink); }
+  button:disabled { opacity: .45; }
+  #log { background: var(--sheet); border-radius: 10px; padding: 12px 14px; font: 13px/1.55 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 3em; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .muted { color: var(--steel); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Check passkey PRF support</h1>
+  <p class="meta" id="env"></p>
+  <button id="b-create">Create a test passkey</button>
+  <button id="b-get" disabled>Sign in twice and compare PRF output</button>
+  <button id="b-crypto">Check WebCrypto</button>
+  <button id="b-copy">Copy results</button>
+  <div id="log" aria-live="polite"></div>
+</main>
+<script type="module">
+const logEl = document.getElementById('log');
+const lines = [];
+function log(msg, cls) {
+  lines.push(msg);
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = msg;
+  logEl.appendChild(div);
+}
+const enc = new TextEncoder();
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async (data) => new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+const fingerprint = async (buf) => hex((await sha256(buf)).slice(0, 8));
+
+document.getElementById('env').textContent =
+  `RP ID ${location.hostname}, secure context ${window.isSecureContext}, ${navigator.userAgent}`;
+
+const PRF_SALT = await sha256(enc.encode('passkey-vault/prf-salt/v1'));
+let credId = null;
+
+function prfFrom(cred) {
+  const ext = cred.getClientExtensionResults();
+  return { enabled: ext.prf?.enabled, first: ext.prf?.results?.first };
+}
+
+async function getPrf() {
+  const cred = await navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rpId: location.hostname,
+      allowCredentials: [{ type: 'public-key', id: credId }],
+      userVerification: 'required',
+      extensions: { prf: { eval: { first: PRF_SALT } } },
+    },
+  });
+  const flags = new Uint8Array(cred.response.authenticatorData)[32];
+  return { prf: prfFrom(cred), uv: !!(flags & 0x04), attachment: cred.authenticatorAttachment };
+}
+
+document.getElementById('b-create').onclick = async () => {
+  try {
+    log('Create');
+    if (!window.PublicKeyCredential) { log('WebAuthn is not available in this browser.', 'bad'); return; }
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        rp: { id: location.hostname, name: 'passkey-vault PRF check' },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'prf-check', displayName: 'prf-check' },
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+        authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+        extensions: { prf: { eval: { first: PRF_SALT } } },
+      },
+    });
+    credId = new Uint8Array(cred.rawId);
+    const p = prfFrom(cred);
+    log(`credential id ${credId.length} bytes, attachment ${cred.authenticatorAttachment}`);
+    log(`create: prf.enabled = ${p.enabled}`, p.enabled ? 'ok' : 'bad');
+    log(p.first ? `create: PRF output returned (fingerprint ${await fingerprint(p.first)})` : 'create: no PRF output yet (expected on some platforms)');
+    document.getElementById('b-get').disabled = false;
+  } catch (e) { log(`error: ${e.name}: ${e.message}`, 'bad'); }
+};
+
+document.getElementById('b-get').onclick = async () => {
+  try {
+    log('Sign in twice');
+    const a = await getPrf();
+    log(`sign-in 1: UV ${a.uv}, attachment ${a.attachment}, PRF ${a.prf.first ? 'returned' : 'missing'}`, a.prf.first ? 'ok' : 'bad');
+    const b = await getPrf();
+    log(`sign-in 2: UV ${b.uv}, attachment ${b.attachment}, PRF ${b.prf.first ? 'returned' : 'missing'}`, b.prf.first ? 'ok' : 'bad');
+    if (a.prf.first && b.prf.first) {
+      const fa = await fingerprint(a.prf.first), fb = await fingerprint(b.prf.first);
+      log(`PRF output ${a.prf.first.byteLength} bytes; fingerprints ${fa} and ${fb}`);
+      log(fa === fb ? 'Same PRF output both times: pass' : 'PRF output differs: fail', fa === fb ? 'ok' : 'bad');
+      log('With a synced passkey, open this page on another device and compare the fingerprint.', 'muted');
+    }
+  } catch (e) { log(`error: ${e.name}: ${e.message}`, 'bad'); }
+};
+
+document.getElementById('b-crypto').onclick = async () => {
+  try {
+    log('WebCrypto');
+    const base = await crypto.subtle.importKey('raw', crypto.getRandomValues(new Uint8Array(32)), 'HKDF', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('passkey-vault/hkdf-salt/v1'), info: enc.encode('passkey-vault/wrap-key/v1') },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    log('HKDF-SHA256 to an AES-256 key: pass', 'ok');
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const aad = enc.encode('aad');
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, enc.encode('secret ✓'));
+    const pt = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, ct));
+    log(`AES-256-GCM round trip: ${pt === 'secret ✓' ? 'pass' : 'fail'}`, pt === 'secret ✓' ? 'ok' : 'bad');
+    try {
+      await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: enc.encode('aaX') }, key, ct);
+      log('AES-GCM accepted a modified AAD: fail', 'bad');
+    } catch { log('AES-GCM rejects a modified AAD: pass', 'ok'); }
+    const kp = await crypto.subtle.generateKey(
+      { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);
+    const spki = await crypto.subtle.exportKey('spki', kp.publicKey);
+    const pub = await crypto.subtle.importKey('spki', spki, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
+    const label = enc.encode('label');
+    const secret = 'x'.repeat(190);
+    const rct = await crypto.subtle.encrypt({ name: 'RSA-OAEP', label }, pub, enc.encode(secret));
+    const rpt = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'RSA-OAEP', label }, kp.privateKey, rct));
+    log(`RSA-OAEP (SHA-256, label), 190-byte round trip: ${rpt === secret ? 'pass' : 'fail'}`, rpt === secret ? 'ok' : 'bad');
+    try {
+      await crypto.subtle.decrypt({ name: 'RSA-OAEP', label: enc.encode('labex') }, kp.privateKey, rct);
+      log('RSA-OAEP accepted a modified label: fail', 'bad');
+    } catch { log('RSA-OAEP rejects a modified label: pass', 'ok'); }
+  } catch (e) { log(`error: ${e.name}: ${e.message}`, 'bad'); }
+};
+
+document.getElementById('b-copy').onclick = async () => {
+  const text = `${document.getElementById('env').textContent}\n${lines.join('\n')}`;
+  try { await navigator.clipboard.writeText(text); log('Copied.', 'muted'); }
+  catch { log('Copy failed. Select the text and copy it manually.', 'bad'); }
+};
+</script>
+</body>
+</html>

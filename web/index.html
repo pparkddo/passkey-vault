@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>passkey-vault</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+<script type="module" src="/js/manage.js"></script>
+</head>
+<body class="page-manage">
+<header class="masthead">
+  <a class="wordmark" href="/">passkey-vault</a>
+  <span class="masthead-host" id="host"></span>
+</header>
+
+<main>
+  <div id="status" class="status-area" aria-live="polite"></div>
+
+  <!-- First-time setup -->
+  <section id="setup" class="block" hidden aria-labelledby="setup-title">
+    <h1 id="setup-title">Set up the vault</h1>
+    <p class="prose">Creating the vault makes a passkey on this device and a master key that only
+      that passkey can unlock. Secrets you add later are encrypted here, in the browser, before
+      they reach the server.</p>
+    <p class="prose">You need the one-time setup code that the server wrote to its data directory.</p>
+    <form id="f-setup" class="form">
+      <label class="field">Setup code
+        <input id="setup-code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
+               placeholder="XXXXX-XXXXX-XXXXX-XXXXX">
+      </label>
+      <label class="field">Name this passkey
+        <input id="setup-name" value="This device" maxlength="64" required>
+        <span class="hint">So you can tell your passkeys apart later.</span>
+      </label>
+      <button class="button button-approve" type="submit">Create passkey and vault</button>
+    </form>
+  </section>
+
+  <!-- After setup -->
+  <section id="pending" class="block" hidden aria-labelledby="pending-title">
+    <h2 id="pending-title">Waiting for you</h2>
+    <ul id="pending-list" class="rows"></ul>
+  </section>
+
+  <section id="items" class="block" hidden aria-labelledby="items-title">
+    <h2 id="items-title">Secrets</h2>
+    <ul id="item-list" class="rows"></ul>
+    <details id="item-panel" class="drawer">
+      <summary class="button button-quiet" id="item-summary">Add a secret</summary>
+      <form id="f-item" class="form">
+        <label class="field">Name
+          <input id="item-name" pattern="[A-Za-z0-9._\-]{1,64}" maxlength="64" autocapitalize="off" spellcheck="false" required>
+          <span class="hint">What requesters ask for. Letters, digits, dot, dash and underscore.</span>
+        </label>
+        <label class="field">Site
+          <input id="item-site" maxlength="200" autocapitalize="off" spellcheck="false" placeholder="example.com">
+        </label>
+        <label class="field">Account
+          <input id="item-account" maxlength="200" autocomplete="username" autocapitalize="off" spellcheck="false">
+        </label>
+        <label class="field">Password
+          <input id="item-secret" type="password" autocomplete="current-password" required>
+          <span class="hint">Encrypted on this device before it is sent. Saving under an existing name replaces it.</span>
+        </label>
+        <button class="button button-approve" type="submit">Save with passkey</button>
+      </form>
+    </details>
+  </section>
+
+  <section id="passkeys" class="block" hidden aria-labelledby="passkeys-title">
+    <h2 id="passkeys-title">Passkeys</h2>
+    <p id="passkey-advice" class="notice notice-warn" hidden>Only one passkey can open this vault. If it is lost,
+      the vault cannot be recovered. Add a second one, such as a security key, and keep it somewhere safe.</p>
+    <ul id="passkey-list" class="rows"></ul>
+    <details class="drawer">
+      <summary class="button button-quiet">Add a passkey</summary>
+      <form id="f-passkey" class="form">
+        <label class="field">Name
+          <input id="passkey-name" maxlength="64" placeholder="Security key" required>
+        </label>
+        <p class="hint">You will confirm twice: first with the new passkey, then with one that is already
+          registered, so the master key can be wrapped for the new one.</p>
+        <button class="button button-approve" type="submit">Add passkey</button>
+      </form>
+    </details>
+  </section>
+</main>
+</body>
+</html>

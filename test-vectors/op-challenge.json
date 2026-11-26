@@ -1,0 +1,40 @@
+{
+  "note": "passkey-vault test vectors v1. Bytes are hex; keys and DER are base64url without padding. Test-only keys: never use them.",
+  "rule": "SHA-256(lp('passkey-vault/op/v1') || lp(op) || lp(nonce) || lp(field1) || ...). fields are UTF-8 strings, fields_hex are bytes",
+  "cases": [
+    {
+      "op": "put-item",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f",
+      "fields": [
+        "github",
+        "github.com",
+        "me@example.com"
+      ],
+      "challenge_hex": "8b1d780c5cabb10b26509c492826caa3333f2e4207ad78629e6daa3b7b7659ae"
+    },
+    {
+      "op": "delete-item",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f",
+      "fields": [
+        "github"
+      ],
+      "challenge_hex": "e537b8ec1258c1bc4408cc138ef7b4bb870960b3a4b536d633d79d033c736128"
+    },
+    {
+      "op": "register",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f",
+      "fields": [
+        "iPhone"
+      ],
+      "challenge_hex": "b0e2864cd20e8f14bfdf950237703e6cf10a2c32b5e2b09f2866c1a168d26b16"
+    },
+    {
+      "op": "add-credential",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f",
+      "fields_hex": [
+        "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+      ],
+      "challenge_hex": "a86f82621059b23fec1bfb76ffd017e6aa0d2fde2ea9bf65f6da71e79b5323d6"
+    }
+  ]
+}
