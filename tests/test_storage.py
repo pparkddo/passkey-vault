@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from passkey_vault.storage import StoreConflict, open_storage  # noqa: E402
+from passkey_vault.storage.mongodb import AUDIT_COLLECTION, DEFAULT_DB, STATE_COLLECTION  # noqa: E402
+from passkey_vault.storage.postgres import AUDIT_TABLE, STATE_TABLE  # noqa: E402
 from test_server import ApprovalFlowTests, ApproverApiTests  # noqa: E402,F401  (reused below)
 
 POSTGRES_URL = os.environ.get("PV_TEST_POSTGRES_URL")
@@ -35,14 +37,14 @@ def reset_backend(url: str | None) -> None:
         import psycopg
 
         with psycopg.connect(url, autocommit=True) as conn:
-            conn.execute("DROP TABLE IF EXISTS passkey_vault_state, passkey_vault_audit")
+            conn.execute(f"DROP TABLE IF EXISTS {STATE_TABLE}, {AUDIT_TABLE}")
     elif url and url.startswith("mongodb"):
         import pymongo
 
         client = pymongo.MongoClient(url)
-        db = client.get_default_database(default="passkey_vault")
-        db.drop_collection("vault_state")
-        db.drop_collection("audit")
+        db = client.get_default_database(default=DEFAULT_DB)
+        db.drop_collection(STATE_COLLECTION)
+        db.drop_collection(AUDIT_COLLECTION)
         client.close()
 
 
@@ -55,12 +57,12 @@ def read_audit(url: str | None, data_dir: Path) -> list[dict]:
         import psycopg
 
         with psycopg.connect(url) as conn:
-            return [row[0] for row in conn.execute("SELECT record FROM passkey_vault_audit ORDER BY id")]
+            return [row[0] for row in conn.execute(f"SELECT record FROM {AUDIT_TABLE} ORDER BY id")]
     import pymongo
 
     client = pymongo.MongoClient(url)
     try:
-        col = client.get_default_database(default="passkey_vault")["audit"]
+        col = client.get_default_database(default=DEFAULT_DB)[AUDIT_COLLECTION]
         return [json.loads(d["record"]) for d in col.find().sort("_id", 1)]
     finally:
         client.close()

@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from .config import MAX_BODY_BYTES
+from .errors import ApiError
+from .formats import REQUEST_ID_RE, SECRET_NAME_RE
 
 if TYPE_CHECKING:
     from .app import App
@@ -28,14 +30,19 @@ SECURITY_HEADERS = {
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
 
-
-class HttpError(Exception):
-    def __init__(self, status: int, code: str, message: str) -> None:
-        super().__init__(message)
-        self.status, self.code, self.message = status, code, message
-
-
 Route = tuple[str, re.Pattern[str], Callable[..., Any]]
+
+
+def require_secret_name(value: object, field: str = "secret") -> str:
+    if not isinstance(value, str) or not SECRET_NAME_RE.fullmatch(value):
+        raise ApiError(400, "invalid_secret_name", f"{field} must match {SECRET_NAME_RE.pattern}")
+    return value
+
+
+def require_request_id(value: str) -> str:
+    if not REQUEST_ID_RE.fullmatch(value):
+        raise ApiError(404, "not_found", "no such request")
+    return value
 
 
 class BaseHandler(BaseHTTPRequestHandler):
@@ -50,15 +57,20 @@ class BaseHandler(BaseHTTPRequestHandler):
             sys.stderr.write(f"[{self.__class__.__name__}] {self.address_string()} {format % args}\n")
 
     # ---- responses ----
+    def _unread_body(self) -> bool:
+        """True if the client sent a body that was not read. On a keep-alive connection its bytes
+        would be parsed as the next request, so such responses close the connection."""
+        if getattr(self, "_body_read", False):
+            return False
+        return bool(self.headers.get("Transfer-Encoding")) or self.headers.get("Content-Length", "0").strip() not in ("", "0")
+
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
         for k, v in SECURITY_HEADERS.items():
             self.send_header(k, v)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        # If the request body was not fully read (errors etc.), close the connection so leftover
-        # bytes cannot be parsed as the next request on a keep-alive connection.
-        if self.close_connection or (self.command == "POST" and not self._body_read):
+        if self.close_connection or self._unread_body():
             self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
@@ -75,26 +87,26 @@ class BaseHandler(BaseHTTPRequestHandler):
     def read_json(self) -> Any:
         ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         if ctype != "application/json":
-            raise HttpError(415, "unsupported_media_type", "Content-Type must be application/json")
+            raise ApiError(415, "unsupported_media_type", "Content-Type must be application/json")
         if self.headers.get("Transfer-Encoding"):
-            raise HttpError(400, "bad_request", "Transfer-Encoding is not supported")
+            raise ApiError(400, "bad_request", "Transfer-Encoding is not supported")
         try:
             length = int(self.headers.get("Content-Length", ""))
         except ValueError:
-            raise HttpError(411, "length_required", "Content-Length is required") from None
+            raise ApiError(411, "length_required", "Content-Length is required") from None
         if length < 0 or length > MAX_BODY_BYTES:
-            raise HttpError(413, "payload_too_large", f"body must be at most {MAX_BODY_BYTES} bytes")
+            raise ApiError(413, "payload_too_large", f"body must be at most {MAX_BODY_BYTES} bytes")
         raw = self.rfile.read(length)
         self._body_read = True
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise HttpError(400, "bad_request", "body is not valid JSON") from None
+            raise ApiError(400, "bad_request", "body is not valid JSON") from None
 
     def read_object(self) -> dict[str, Any]:
         body = self.read_json()
         if not isinstance(body, dict):
-            raise HttpError(400, "bad_request", "body must be a JSON object")
+            raise ApiError(400, "bad_request", "body must be a JSON object")
         return body
 
     def query(self) -> dict[str, list[str]]:
@@ -119,18 +131,15 @@ class BaseHandler(BaseHTTPRequestHandler):
                     fn(self, *match.groups())
                     return
             if path_matched:
-                raise HttpError(405, "method_not_allowed", "method not allowed")
-            raise HttpError(404, "not_found", "not found")
+                raise ApiError(405, "method_not_allowed", "method not allowed")
+            raise ApiError(404, "not_found", "not found")
+        except ApiError as e:
+            self.send_error_json(e.status, e.code, e.message)
         except Exception as e:  # noqa: BLE001
-            # HttpError and the domain errors (VaultError, QueueError) all carry status/code/message
-            if all(hasattr(e, a) for a in ("status", "code", "message")):
-                self.send_error_json(e.status, e.code, e.message)  # type: ignore[attr-defined]
-            else:
-                self.log_message("internal error: %r", e)
-                self.send_error_json(500, "internal_error", "internal error")
+            self.log_message("internal error: %r", e)
+            self.send_error_json(500, "internal_error", "internal error")
 
     do_GET = do_POST = do_HEAD = do_PUT = do_DELETE = do_PATCH = dispatch  # type: ignore[assignment]
 
     def do_OPTIONS(self) -> None:  # never grant CORS preflights
-        self._body_read = False
         self.send_error_json(405, "method_not_allowed", "method not allowed")

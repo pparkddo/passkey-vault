@@ -72,8 +72,11 @@ export function wrapAad(credentialId) {
   return concat(TAGS.wrap, credentialId);
 }
 
+let prfSaltPromise = null;
+/** The fixed PRF input, computed once. */
 export function prfSalt() {
-  return sha256(TAGS.prfSalt);
+  prfSaltPromise ??= sha256(TAGS.prfSalt);
+  return prfSaltPromise;
 }
 
 export function b64urlEncode(bytes) {
@@ -102,13 +105,6 @@ export function fromHex(s) {
   const out = new Uint8Array(s.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
   return out;
-}
-
-export function bytesEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d |= a[i] ^ b[i];
-  return d === 0;
 }
 
 export function hasForbiddenChars(s) {

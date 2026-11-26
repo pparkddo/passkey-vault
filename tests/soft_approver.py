@@ -10,18 +10,17 @@ import hmac
 import json
 import secrets
 import struct
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 
 import cbor2
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, padding
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from passkey_vault import formats as f
+from ref_client import _call
+from support import oaep, wrap_key
 
 FLAG_UP, FLAG_UV, FLAG_BE, FLAG_BS, FLAG_AT = 0x01, 0x04, 0x08, 0x10, 0x40
 
@@ -64,13 +63,10 @@ class SoftAuthenticator:
                          "attestationObject": f.b64url_encode(att), "transports": ["internal"]},
         }
 
-    def get(self, cred: SoftCredential, challenge: bytes, origin: str | None = None,
-            counter: bool = False) -> dict:
-        if counter:
-            cred.sign_count += 1
+    def get(self, cred: SoftCredential, challenge: bytes) -> dict:
         auth_data = (hashlib.sha256(self.rp_id.encode()).digest() + bytes([self._flags()])
                      + struct.pack(">I", cred.sign_count))
-        cdj = self._client_data("webauthn.get", challenge, origin)
+        cdj = self._client_data("webauthn.get", challenge)
         sig = cred.key.sign(auth_data + hashlib.sha256(cdj).digest(), ec.ECDSA(hashes.SHA256()))
         cid = f.b64url_encode(cred.id)
         return {
@@ -79,10 +75,6 @@ class SoftAuthenticator:
             "response": {"clientDataJSON": f.b64url_encode(cdj), "authenticatorData": f.b64url_encode(auth_data),
                          "signature": f.b64url_encode(sig), "userHandle": None},
         }
-
-
-def wrap_key(prf_out: bytes) -> bytes:
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=f.HKDF_SALT, info=f.HKDF_INFO).derive(prf_out)
 
 
 class SoftApprover:
@@ -95,22 +87,13 @@ class SoftApprover:
 
     # ---- HTTP ----
     def call(self, method: str, path: str, body: dict | None = None, origin: str | None = "default") -> tuple[int, dict]:
-        headers = {}
-        data = None
-        if body is not None:
-            data = json.dumps(body).encode()
-            headers["Content-Type"] = "application/json"
-        if origin == "default":
-            origin = self.origin
-        if origin is not None:
-            headers["Origin"] = origin
-        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status, json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            with e:
-                return e.code, json.loads(e.read() or b"{}")
+        origin = self.origin if origin == "default" else origin
+        return _call(method, self.base + path, body, timeout=10, headers={"Origin": origin} if origin else None)
+
+    def sign_op(self, op: str, by: SoftCredential, *fields: str | bytes) -> dict:
+        """{nonce, assertion} for an operation challenge, like signOnly() in web/js/manage.js."""
+        nonce = self.nonce(op)
+        return {"nonce": f.b64url_encode(nonce), "assertion": self.auth.get(by, f.op_challenge(op, nonce, *fields))}
 
     def nonce(self, op: str) -> bytes:
         st, body = self.call("POST", "/api/nonce", {"op": op})
@@ -170,8 +153,7 @@ class SoftApprover:
         plaintext = AESGCM(master).decrypt(f.b64url_decode(it["iv"]), f.b64url_decode(it["ct"]),
                                            f.item_aad(it["name"], it["site"], it["account"]))
         label = f.oaep_label(req["id"], req["command"], pub_der)
-        ct = load_der_public_key(pub_der).encrypt(  # type: ignore[union-attr]
-            plaintext, padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=label))
+        ct = load_der_public_key(pub_der).encrypt(plaintext, oaep(label))  # type: ignore[union-attr]
         return self.call("POST", f"/api/requests/{req_id}/approve",
                          {"assertion": assertion, "ciphertext": f.b64url_encode(ct)})
 
@@ -192,13 +174,8 @@ class SoftApprover:
         return st, body
 
     def delete_credential(self, target: SoftCredential, by: SoftCredential) -> tuple[int, dict]:
-        nonce = self.nonce("delete-credential")
-        assertion = self.auth.get(by, f.op_challenge("delete-credential", nonce, target.id))
         return self.call("POST", f"/api/credentials/{f.b64url_encode(target.id)}/delete",
-                         {"nonce": f.b64url_encode(nonce), "assertion": assertion})
+                         self.sign_op("delete-credential", by, target.id))
 
     def delete_item(self, name: str, by: SoftCredential | None = None) -> tuple[int, dict]:
-        by = by or self.creds[0]
-        nonce = self.nonce("delete-item")
-        assertion = self.auth.get(by, f.op_challenge("delete-item", nonce, name))
-        return self.call("POST", f"/api/items/{name}/delete", {"nonce": f.b64url_encode(nonce), "assertion": assertion})
+        return self.call("POST", f"/api/items/{name}/delete", self.sign_op("delete-item", by or self.creds[0], name))

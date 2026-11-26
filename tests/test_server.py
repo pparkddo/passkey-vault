@@ -45,9 +45,9 @@ def raw_request(port: int, method: str, path: str, body: bytes | None = None,
     return r.status, parsed, dict(r.getheaders())
 
 
-def make_config(data_dir: Path, storage: str | None = None) -> Config:
-    return Config(data_dir=data_dir, rp_id="localhost", origin=ORIGIN, storage=storage,
-                  approver_port=0, requester_port=0, dev=True, access_log=False)
+def make_config(data_dir: Path, storage: str | None = None, origin: str = ORIGIN, approver_port: int = 0) -> Config:
+    return Config(data_dir=data_dir, rp_id="localhost", origin=origin, storage=storage,
+                  approver_port=approver_port, requester_port=0, dev=True, access_log=False)
 
 
 class ServerTestBase(unittest.TestCase):
@@ -60,7 +60,10 @@ class ServerTestBase(unittest.TestCase):
         self.approver_port, self.requester_port = self.app.ports
         self.setup_code = self.app.vault.ensure_setup_code()
         self.approver = SoftApprover(f"http://127.0.0.1:{self.approver_port}", "localhost", ORIGIN)
-        self.local = f"http://127.0.0.1:{self.requester_port}"
+
+    @property
+    def requester_url(self) -> str:
+        return f"http://127.0.0.1:{self.app.ports[1]}"
 
     def tearDown(self) -> None:
         self.app.stop()
@@ -74,14 +77,16 @@ class ServerTestBase(unittest.TestCase):
 
     def new_request(self, command: str = "printenv PASSKEY_VAULT_SECRET", secret: str = "github",
                     bits: int = 2048) -> OneShotRequest:
-        req = OneShotRequest(self.local, secret, command, bits=bits)
+        req = OneShotRequest(self.requester_url, secret, command, bits=bits)
         req.create()
         return req
 
     def approve_raw(self, req: OneShotRequest, cred, ciphertext: bytes) -> tuple[int, dict]:
+        """Sign the real challenge with `cred` but upload an arbitrary ciphertext."""
         challenge = f.approve_challenge(req.id, req.secret, req.command, req.pubkey_der)
         return self.approver.call("POST", f"/api/requests/{req.id}/approve",
-                               {"assertion": self.approver.auth.get(cred, challenge), "ciphertext": f.b64url_encode(ciphertext)})
+                                  {"assertion": self.approver.auth.get(cred, challenge),
+                                   "ciphertext": f.b64url_encode(ciphertext)})
 
 
 class SetupTests(ServerTestBase):
@@ -215,10 +220,12 @@ class ApprovalFlowTests(ServerTestBase):
     def test_failed_send_keeps_ciphertext_for_retry(self) -> None:
         req = self.new_request()
         self.approver.approve(req.id)
-        first = self.app.queue.collect(req.id, 0)
-        self.assertEqual(first["status"], "approved")
-        self.assertEqual(self.app.queue.collect(req.id, 0), {"status": "pending"}, "a concurrent poll waits")
-        self.app.queue.finish_delivery(req.id, delivered=False)  # e.g. the requester disconnected
+        with self.assertRaises(BrokenPipeError):
+            with self.app.queue.deliver(req.id, 0) as first:  # e.g. the requester disconnected
+                self.assertEqual(first["status"], "approved")
+                with self.app.queue.deliver(req.id, 0) as concurrent:
+                    self.assertEqual(concurrent, {"status": "pending"}, "a concurrent poll waits")
+                raise BrokenPipeError
         self.assertEqual(req.decrypt(f.b64url_decode(req.poll(0)["ciphertext"])).decode(), SECRET)
         self.assertEqual(raw_request(self.requester_port, "GET", f"/requests/{req.id}")[0], 410)
 
@@ -250,7 +257,7 @@ class ApprovalFlowTests(ServerTestBase):
         self.assertTrue(any(a["event"] == "request_delivered" for a in audit))
 
 
-class LocalApiValidationTests(ServerTestBase):
+class RequesterApiValidationTests(ServerTestBase):
     def setUp(self) -> None:
         super().setUp()
         self.init_vault()
@@ -298,7 +305,7 @@ class LocalApiValidationTests(ServerTestBase):
         self.assertEqual((st, resp["error"]), (404, "not_found"))
         self.assertEqual(raw_request(self.requester_port, "DELETE", "/requests")[0], 405)
 
-    def test_local_door_has_no_approver_api(self) -> None:
+    def test_requester_door_has_no_approver_api(self) -> None:
         self.assertEqual(raw_request(self.requester_port, "GET", "/api/state")[0], 404)
 
 
@@ -442,11 +449,10 @@ class PersistenceTests(ServerTestBase):
         self.approver.base = f"http://127.0.0.1:{self.approver_port}"
         self.assertTrue(self.app.vault.initialized)
         self.assertIsNone(self.app.vault.ensure_setup_code())
-        req.base = f"http://127.0.0.1:{self.requester_port}"
+        req.base = self.requester_url
         with self.assertRaises(RequesterError):
             req.poll(0)
-        req2 = OneShotRequest(f"http://127.0.0.1:{self.requester_port}", "github", "true", bits=2048)
-        req2.create()
+        req2 = self.new_request("true")
         self.assertEqual(self.approver.approve(req2.id)[0], 200)
         self.assertEqual(req2.wait_result().decode(), SECRET)
 

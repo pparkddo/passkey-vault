@@ -13,9 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import unittest
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +22,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from ref_client import OneShotRequest  # noqa: E402
 from soft_approver import SoftApprover  # noqa: E402
+from support import wait_for_url  # noqa: E402
 
 PROJECT = "passkey-vault-test"
 ORIGIN = "http://localhost:8740"
@@ -43,16 +42,10 @@ def compose(*args: str, env: dict | None = None, check: bool = True) -> subproce
 
 
 def wait_healthy(timeout: float = 90) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(f"{ORIGIN}/api/state", timeout=2) as r:
-                if r.status == 200:
-                    return
-        except OSError:
-            pass
-        time.sleep(1)
-    raise AssertionError("server did not come up:\n" + compose("logs", check=False).stdout[-3000:])
+    try:
+        wait_for_url(f"{ORIGIN}/api/state", timeout)
+    except TimeoutError:
+        raise AssertionError("server did not come up:\n" + compose("logs", check=False).stdout[-3000:]) from None
 
 
 @unittest.skipUnless(os.environ.get("PV_DOCKER_TEST") == "1", "set PV_DOCKER_TEST=1 (needs Docker)")

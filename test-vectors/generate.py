@@ -16,25 +16,18 @@ import json
 import sys
 from pathlib import Path
 
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "server"))
+sys.path.insert(0, str(HERE.parent / "tests"))
+
+from support import oaep, spki_der as spki, wrap_key  # noqa: E402  (also puts server/ on sys.path)
 
 from passkey_vault import formats as f  # noqa: E402
 
 NOTE = "passkey-vault test vectors v1. Bytes are hex; keys and DER are base64url without padding. Test-only keys: never use them."
-
-
-def oaep(label: bytes) -> padding.OAEP:
-    return padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=label)
-
-
-def spki(pub) -> bytes:
-    return pub.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
 
 
 def pkcs8(priv) -> bytes:
@@ -122,11 +115,11 @@ def main() -> None:
 
     # HKDF, master key wrapping, item encryption
     prf_out = bytes(range(32))
-    wrap_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=f.HKDF_SALT, info=f.HKDF_INFO).derive(prf_out)
+    wk = wrap_key(prf_out)
     master = bytes(range(100, 132))
     cred_id = bytes.fromhex("c0ffee" * 10)
     wrap_iv = bytes(range(200, 212))
-    wrapped = AESGCM(wrap_key).encrypt(wrap_iv, master, f.wrap_aad(cred_id))
+    wrapped = AESGCM(wk).encrypt(wrap_iv, master, f.wrap_aad(cred_id))
     item = {"name": "github", "site": "github.com", "account": "me@example.com"}
     item_iv = bytes(range(50, 62))
     secret = "hunter2 ✓ geheim"
@@ -137,7 +130,7 @@ def main() -> None:
                 "item = AES-256-GCM(master key, iv, UTF-8 secret, AAD=lp('passkey-vault/item/v1')||lp(name)||lp(site)||lp(account)). Ciphertext hex includes the 16-byte tag",
         "prf_salt_hex": f.PRF_SALT.hex(),
         "prf_output_hex": prf_out.hex(),
-        "wrap_key_hex": wrap_key.hex(),
+        "wrap_key_hex": wk.hex(),
         "master_key_hex": master.hex(),
         "credential_id_hex": cred_id.hex(),
         "wrap_aad_hex": f.wrap_aad(cred_id).hex(),

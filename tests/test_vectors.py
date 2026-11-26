@@ -10,22 +10,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 
+sys.path.insert(0, str(ROOT / "tests"))
+
 from cryptography.exceptions import InvalidTag  # noqa: E402
-from cryptography.hazmat.primitives import hashes  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric import padding  # noqa: E402
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF  # noqa: E402
 from cryptography.hazmat.primitives.serialization import load_der_private_key  # noqa: E402
 
 from passkey_vault import formats as f  # noqa: E402
+from support import oaep, wrap_key  # noqa: E402
 
 
 def load(name: str) -> dict:
     return json.loads((ROOT / "test-vectors" / name).read_text(encoding="utf-8"))
-
-
-def oaep(label: bytes) -> padding.OAEP:
-    return padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=label)
 
 
 class VectorTests(unittest.TestCase):
@@ -58,7 +54,7 @@ class VectorTests(unittest.TestCase):
     def test_keys(self) -> None:
         k = load("keys.json")
         self.assertEqual(f.PRF_SALT.hex(), k["prf_salt_hex"])
-        wk = HKDF(algorithm=hashes.SHA256(), length=32, salt=f.HKDF_SALT, info=f.HKDF_INFO).derive(bytes.fromhex(k["prf_output_hex"]))
+        wk = wrap_key(bytes.fromhex(k["prf_output_hex"]))
         self.assertEqual(wk.hex(), k["wrap_key_hex"])
         cred = bytes.fromhex(k["credential_id_hex"])
         master = AESGCM(wk).decrypt(bytes.fromhex(k["wrap_iv_hex"]), bytes.fromhex(k["wrapped_master_key_hex"]), f.wrap_aad(cred))

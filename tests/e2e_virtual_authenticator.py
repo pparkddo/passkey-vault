@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import re
-import socket
 import sys
 import tempfile
 import threading
@@ -25,18 +24,13 @@ sys.path.insert(0, str(ROOT / "tests"))
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
 from passkey_vault.app import App  # noqa: E402
-from passkey_vault.config import Config  # noqa: E402
 from ref_client import OneShotRequest, RequesterError  # noqa: E402
+from support import free_port  # noqa: E402
+from test_server import make_config  # noqa: E402
 
 PASSWORD = "e2e-pässwörd-✓-0123"
 TIMEOUT = 15_000
 SHOTS = os.environ.get("PV_SCREENSHOTS")
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def chromium_path() -> str | None:
@@ -59,8 +53,7 @@ def add_authenticator(page: Page, prf: bool = True, transport: str = "internal")
 
 
 def start_app(port: int, tmp: str) -> App:
-    app = App(Config(data_dir=Path(tmp) / "data", rp_id="localhost", origin=f"http://localhost:{port}",
-                     approver_port=port, requester_port=0, dev=True, access_log=False))
+    app = App(make_config(Path(tmp) / "data", origin=f"http://localhost:{port}", approver_port=port))
     app.start()
     return app
 
@@ -92,19 +85,21 @@ class E2E(unittest.TestCase):
         self.console: list[str] = []
         self.page.on("console", lambda m: self.console.append(f"{m.type}: {m.text}"))
         self.page.on("pageerror", lambda e: self.console.append(f"pageerror: {e}"))
-        # Test-only hook: call self.before_get right before navigator.credentials.get. Used only to choose
-        # which of two virtual authenticators answers (like a person picking up another device).
+
+    def tearDown(self) -> None:
+        problems = [m for m in self.console if "Content Security Policy" in m or "pageerror" in m]
+        self.context.close()
+        self.assertEqual(problems, [], "no CSP violations or page errors")
+
+    def hook_before_get(self) -> None:
+        """Test-only: call self.before_get right before navigator.credentials.get. Used in one step to
+        choose which of two virtual authenticators answers (like a person picking up another device)."""
         self.before_get = None
         self.page.expose_function("pvBeforeGet", lambda: self.before_get and self.before_get())
         self.page.add_init_script("""(() => {
             const orig = navigator.credentials.get.bind(navigator.credentials);
             navigator.credentials.get = async (opts) => { await window.pvBeforeGet(); return orig(opts); };
         })()""")
-
-    def tearDown(self) -> None:
-        problems = [m for m in self.console if "Content Security Policy" in m or "pageerror" in m]
-        self.context.close()
-        self.assertEqual(problems, [], "no CSP violations or page errors")
 
     def shot(self, name: str) -> None:
         if SHOTS:
@@ -136,6 +131,7 @@ class E2E(unittest.TestCase):
 
     def test_full_flow(self) -> None:
         page = self.page
+        self.hook_before_get()
         cdp, auth_a = add_authenticator(page)
 
         # 1) first-time setup

@@ -17,13 +17,16 @@ from typing import Any
 
 from .base import Document, StoreConflict
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS passkey_vault_state (
+STATE_TABLE = "passkey_vault_state"
+AUDIT_TABLE = "passkey_vault_audit"
+
+SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS {STATE_TABLE} (
     id       smallint PRIMARY KEY CHECK (id = 1),
     revision bigint   NOT NULL,
     doc      jsonb    NOT NULL
 );
-CREATE TABLE IF NOT EXISTS passkey_vault_audit (
+CREATE TABLE IF NOT EXISTS {AUDIT_TABLE} (
     id          bigserial   PRIMARY KEY,
     recorded_at timestamptz NOT NULL DEFAULT now(),
     record      jsonb       NOT NULL
@@ -50,9 +53,9 @@ class _Connection:
         self._conn = None
         self.execute(SCHEMA)
 
-    def execute(self, sql: str, params: tuple = (), retry: bool = True) -> list[tuple]:
-        """Run one statement. On a broken connection, reconnect and (only if retry) run it again.
-        Non-idempotent statements must pass retry=False: the first attempt may have committed."""
+    def execute(self, sql: str, params: tuple = (), retry: bool = True) -> tuple[list[tuple], int]:
+        """Run one statement; return (rows, rowcount). On a broken connection, reconnect and (only if
+        retry) run it again. Non-idempotent statements pass retry=False: the first try may have committed."""
         broken = (self._psycopg.OperationalError, self._psycopg.InterfaceError)
         with self._lock:
             for attempt in (1, 2):
@@ -61,12 +64,12 @@ class _Connection:
                 try:
                     with self._conn.cursor() as cur:
                         cur.execute(sql, params)
-                        return cur.fetchall() if cur.description else [("rowcount", cur.rowcount)]
+                        return (cur.fetchall() if cur.description else []), cur.rowcount
                 except broken:
                     self._conn = None
                     if attempt == 2 or not retry:
                         raise
-        raise AssertionError("unreachable")
+        raise AssertionError("unreachable")  # the loop always returns or raises
 
     def close(self) -> None:
         with self._lock:
@@ -80,20 +83,20 @@ class PostgresVaultStore:
         self._db = conn
 
     def load(self) -> tuple[Document | None, int]:
-        rows = self._db.execute("SELECT doc, revision FROM passkey_vault_state WHERE id = 1")
+        rows, _ = self._db.execute(f"SELECT doc, revision FROM {STATE_TABLE} WHERE id = 1")
         return (rows[0][0], int(rows[0][1])) if rows else (None, 0)
 
     def save(self, doc: Document, expected_revision: int) -> int:
         new = expected_revision + 1
         if expected_revision == 0:
-            rows = self._db.execute(
-                "INSERT INTO passkey_vault_state (id, revision, doc) VALUES (1, %s, %s) ON CONFLICT (id) DO NOTHING",
+            _, count = self._db.execute(
+                f"INSERT INTO {STATE_TABLE} (id, revision, doc) VALUES (1, %s, %s) ON CONFLICT (id) DO NOTHING",
                 (new, self._db.Jsonb(doc)))
         else:
-            rows = self._db.execute(
-                "UPDATE passkey_vault_state SET revision = %s, doc = %s WHERE id = 1 AND revision = %s",
+            _, count = self._db.execute(
+                f"UPDATE {STATE_TABLE} SET revision = %s, doc = %s WHERE id = 1 AND revision = %s",
                 (new, self._db.Jsonb(doc), expected_revision))
-        if rows[0][1] != 1:
+        if count != 1:
             raise StoreConflict(f"revision changed (expected {expected_revision})")
         return new
 
@@ -106,7 +109,7 @@ class PostgresAuditSink:
         self._db = conn
 
     def append(self, record: dict[str, Any]) -> None:
-        self._db.execute("INSERT INTO passkey_vault_audit (record) VALUES (%s)", (self._db.Jsonb(record),), retry=False)
+        self._db.execute(f"INSERT INTO {AUDIT_TABLE} (record) VALUES (%s)", (self._db.Jsonb(record),), retry=False)
 
     def close(self) -> None:
         self._db.close()

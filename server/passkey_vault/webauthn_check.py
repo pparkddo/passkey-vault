@@ -13,12 +13,13 @@ from webauthn import verify_authentication_response, verify_registration_respons
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
 
 from .audit import utc_now_iso
+from .errors import ApiError
 from .formats import b64url_decode, b64url_encode
-from .vault import Vault, VaultError
+from .vault import Signer
 
 
-def _bad(message: str) -> VaultError:
-    return VaultError("invalid_webauthn", message, 400)
+def _bad(message: str) -> ApiError:
+    return ApiError(400, "invalid_webauthn", message)
 
 
 def parse_wrapped(w: Any) -> dict[str, str]:
@@ -55,14 +56,18 @@ def verify_registration(credential: Any, expected_challenge: bytes, rp_id: str, 
     }
 
 
-def verify_assertion(vault: Vault, assertion: Any, expected_challenge: bytes, rp_id: str, origin: str,
-                     allowed_ids: set[str] | None = None) -> dict[str, Any]:
-    """Verify a signature by a registered passkey; return fields for the audit log."""
+def verify_assertion(doc: dict[str, Any], assertion: Any, expected_challenge: bytes, rp_id: str, origin: str,
+                     allowed_ids: set[str] | None = None) -> tuple[dict[str, Any], Signer]:
+    """Verify a signature by a passkey registered in `doc`.
+
+    Returns (fields for the audit log, signer). Pass the signer to the vault change so the new
+    signature counter is stored in the same write.
+    """
     if not isinstance(assertion, dict) or not isinstance(assertion.get("id"), str):
         raise _bad("assertion must be an object")
-    cred = vault.credential(assertion["id"])
+    cred = next((c for c in doc.get("credentials", []) if c["id"] == assertion["id"]), None)
     if cred is None or (allowed_ids is not None and cred["id"] not in allowed_ids):
-        raise VaultError("unknown_credential", "this passkey is not registered", 403)
+        raise ApiError(403, "unknown_credential", "this passkey is not registered")
     try:
         v = verify_authentication_response(
             credential=assertion, expected_challenge=expected_challenge, expected_rp_id=rp_id,
@@ -71,12 +76,12 @@ def verify_assertion(vault: Vault, assertion: Any, expected_challenge: bytes, rp
         )
     except (InvalidAuthenticationResponse, ValueError, KeyError, TypeError) as e:
         raise _bad(f"assertion verification failed: {e}") from None
-    vault.update_sign_count(cred["id"], v.new_sign_count)
     resp = assertion["response"]
-    return {
+    audit = {
         "credential_id": cred["id"],
         "credential_name": cred["name"],
         "authenticator_data": resp["authenticatorData"],
         "client_data_json": resp["clientDataJSON"],
         "signature": resp["signature"],
     }
+    return audit, (cred["id"], v.new_sign_count)

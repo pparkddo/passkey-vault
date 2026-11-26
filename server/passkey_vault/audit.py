@@ -1,7 +1,14 @@
-"""Audit log: append-only. Never contains secrets, plaintext or RSA ciphertext."""
+"""Audit log: append-only. Never contains secrets, plaintext or RSA ciphertext.
+
+Two ways to write, by when the event takes effect:
+- write():  before the state change. If it fails, the caller aborts and the event does not happen.
+- record(): after the state change. The event already happened, so a failing sink is logged and the
+            caller carries on.
+"""
 
 from __future__ import annotations
 
+import sys
 import time
 
 from .storage import AuditSink
@@ -17,3 +24,9 @@ class AuditLog:
 
     def write(self, event: str, **fields: object) -> None:
         self._sink.append({"ts": utc_now_iso(), "event": event, **fields})
+
+    def record(self, event: str, **fields: object) -> None:
+        try:
+            self.write(event, **fields)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"audit write failed for {event}: {e!r}\n")

@@ -8,54 +8,51 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from .config import MAX_WAIT_SECONDS, host_name
-from .formats import MAX_RSA_BITS, MIN_RSA_BITS, REQUEST_ID_RE, SECRET_NAME_RE, b64url_decode, validate_command
-from .http_common import BaseHandler, HttpError
+from .errors import ApiError
+from .formats import MAX_RSA_BITS, MIN_RSA_BITS, b64url_decode, validate_command
+from .http_common import BaseHandler, require_request_id, require_secret_name
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def parse_requester_pubkey(value: object) -> bytes:
-    """SPKI DER (base64url) -> DER bytes. Only RSA, 2048-4096 bits, e = 65537."""
+def parse_requester_pubkey(value: object) -> tuple[bytes, int]:
+    """SPKI DER (base64url) -> (DER bytes, modulus size in bytes). Only RSA, 2048-4096 bits, e = 65537."""
     if not isinstance(value, str):
-        raise HttpError(400, "invalid_pubkey", "pubkey must be a base64url string")
+        raise ApiError(400, "invalid_pubkey", "pubkey must be a base64url string")
     try:
         der = b64url_decode(value)
         key = load_der_public_key(der)
     except (ValueError, TypeError):
-        raise HttpError(400, "invalid_pubkey", "pubkey is not a SPKI DER public key") from None
+        raise ApiError(400, "invalid_pubkey", "pubkey is not a SPKI DER public key") from None
     if not isinstance(key, rsa.RSAPublicKey):
-        raise HttpError(400, "invalid_pubkey", "pubkey is not an RSA key")
+        raise ApiError(400, "invalid_pubkey", "pubkey is not an RSA key")
     if key.key_size < MIN_RSA_BITS:
-        raise HttpError(400, "key_too_small", f"RSA key must be at least {MIN_RSA_BITS} bits")
+        raise ApiError(400, "key_too_small", f"RSA key must be at least {MIN_RSA_BITS} bits")
     if key.key_size > MAX_RSA_BITS or key.key_size % 8:
-        raise HttpError(400, "invalid_pubkey", f"RSA key must be at most {MAX_RSA_BITS} bits and a multiple of 8")
+        raise ApiError(400, "invalid_pubkey", f"RSA key must be at most {MAX_RSA_BITS} bits and a multiple of 8")
     if key.public_numbers().e != 65537:
-        raise HttpError(400, "invalid_pubkey", "RSA public exponent must be 65537")
-    return der
-
-
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+        raise ApiError(400, "invalid_pubkey", "RSA public exponent must be 65537")
+    return der, key.key_size // 8
 
 
 class RequesterHandler(BaseHandler):
     def check_request(self) -> None:
         # Blocks DNS rebinding: a browser tricked into calling this door sends the attacker's host name.
         if host_name(self.headers.get("Host")) not in LOOPBACK_HOSTS | set(self.app.config.requester_hosts):
-            raise HttpError(421, "bad_host", "this host name is not accepted by the requester door")
+            raise ApiError(421, "bad_host", "this host name is not accepted by the requester door")
 
     def route_create_request(self) -> None:
         body = self.read_object()
-        secret, command = body.get("secret"), body.get("command")
-        if not isinstance(secret, str) or not SECRET_NAME_RE.fullmatch(secret):
-            raise HttpError(400, "invalid_secret_name", "secret must match [A-Za-z0-9._-]{1,64}")
+        secret = require_secret_name(body.get("secret"))
+        command = body.get("command")
         problem = validate_command(command)
         if problem:
-            raise HttpError(400, "invalid_command", problem)
-        pubkey_der = parse_requester_pubkey(body.get("pubkey"))
-        vault = self.app.vault
-        if not vault.initialized:
-            raise HttpError(409, "vault_not_initialized", "the vault has not been set up yet")
-        if vault.item(secret) is None:
-            raise HttpError(404, "unknown_secret", "no vault item with that name")
-        req = self.app.queue.create(secret, command, pubkey_der)
+            raise ApiError(400, "invalid_command", problem)
+        pubkey_der, key_bytes = parse_requester_pubkey(body.get("pubkey"))
+        doc = self.app.vault.require_initialized()
+        if secret not in doc["items"]:
+            raise ApiError(404, "unknown_secret", "no vault item with that name")
+        req = self.app.queue.create(secret, command, pubkey_der, key_bytes)
         self.send_json(201, {
             "id": req.id,
             "approve_url": f"{self.app.config.origin}/approve?id={req.id}",
@@ -65,20 +62,10 @@ class RequesterHandler(BaseHandler):
     def route_collect(self, req_id: str) -> None:
         raw = self.query().get("wait", ["0"])
         if len(raw) != 1 or not re.fullmatch(r"\d{1,2}", raw[0]) or int(raw[0]) > MAX_WAIT_SECONDS:
-            raise HttpError(400, "bad_request", f"wait must be an integer from 0 to {MAX_WAIT_SECONDS}")
-        if not REQUEST_ID_RE.fullmatch(req_id):
-            raise HttpError(404, "not_found", "no such request")
-        result = self.app.queue.collect(req_id, float(raw[0]))
-        if result["status"] != "approved":
-            self.send_json(200, result)
-            return
-        delivered = False
-        try:
+            raise ApiError(400, "bad_request", f"wait must be an integer from 0 to {MAX_WAIT_SECONDS}")
+        with self.app.queue.deliver(require_request_id(req_id), float(raw[0])) as result:
             self.send_json(200, result)
             self.wfile.flush()
-            delivered = True
-        finally:
-            self.app.queue.finish_delivery(req_id, delivered)
 
     routes = [
         ("POST", re.compile(r"/requests"), route_create_request),

@@ -12,16 +12,16 @@
 # 8740. If requesters run on other hosts, publish 8741 on a private interface (PASSKEY_VAULT_PUBLISH) and
 # list the host names they use in PASSKEY_VAULT_REQUESTER_HOSTS. See docs/deployment.md.
 
-x-hardening: &hardening
-  read_only: true
-  cap_drop: [ALL]
+x-common: &common
   security_opt: ["no-new-privileges:true"]
-  tmpfs: [/tmp]
   restart: unless-stopped
 
 services:
   passkey-vault:
-    <<: *hardening
+    <<: *common
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: [/tmp]
     build:
       context: .
       args:
@@ -39,11 +39,9 @@ services:
       - vault-data:/data
 
   postgres:
-    <<: *hardening
+    <<: *common
     profiles: [postgres]
     image: postgres:17-alpine
-    read_only: false
-    cap_drop: []
     environment:
       POSTGRES_DB: passkey_vault
       POSTGRES_USER: passkey_vault
@@ -52,11 +50,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   mongodb:
-    <<: *hardening
+    <<: *common
     profiles: [mongodb]
     image: mongo:8
-    read_only: false
-    cap_drop: []
     volumes:
       - mongodb-data:/data/db
 

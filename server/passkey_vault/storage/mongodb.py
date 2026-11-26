@@ -20,6 +20,8 @@ from typing import Any
 from .base import Document, StoreConflict
 
 DEFAULT_DB = "passkey_vault"
+STATE_COLLECTION = "vault_state"
+AUDIT_COLLECTION = "audit"
 
 
 def _import_pymongo() -> Any:
@@ -33,7 +35,7 @@ def _import_pymongo() -> Any:
 
 class MongoVaultStore:
     def __init__(self, db: Any, client: Any, duplicate_key_error: type[Exception]) -> None:
-        self._col = db["vault_state"]
+        self._col = db[STATE_COLLECTION]
         self._client = client
         self._dup = duplicate_key_error
 
@@ -62,7 +64,7 @@ class MongoVaultStore:
 
 class MongoAuditSink:
     def __init__(self, db: Any, client: Any) -> None:
-        self._col = db["audit"]
+        self._col = db[AUDIT_COLLECTION]
         self._client = client
 
     def append(self, record: dict[str, Any]) -> None:

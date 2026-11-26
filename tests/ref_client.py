@@ -32,10 +32,12 @@ class RequesterError(Exception):
     pass
 
 
-def _call(method: str, url: str, body: dict | None = None, timeout: float = 40) -> tuple[int, dict]:
+def _call(method: str, url: str, body: dict | None = None, timeout: float = 40,
+          headers: dict | None = None) -> tuple[int, dict]:
+    """JSON request -> (status, JSON body); HTTP errors are returned, not raised."""
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json"} if data else {})
+    hdrs = {**({"Content-Type": "application/json"} if data else {}), **(headers or {})}
+    req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, json.loads(r.read())

@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import os
 import plistlib
-import socket
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+
+from support import free_port, wait_for_url  # noqa: E402
 DEPLOY = ROOT / "deploy" / "macos" / "deploy.sh"
 PLIST = ROOT / "deploy" / "macos" / "com.passkey-vault.server.plist"
 
@@ -63,9 +63,7 @@ class DeployTests(unittest.TestCase):
         self.assertIn("changed lines: 0", r.stdout)
 
         # Start the server exactly as the LaunchDaemon would.
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         filled = (PLIST.read_text().replace("__PREFIX__", str(self.prefix)).replace("__SERVICE_USER__", "_passkeyvault")
                   .replace("__ORIGIN__", "https://vault.example.com")
                   .replace("<string>8740</string>", f"<string>{port}</string>")
@@ -75,14 +73,7 @@ class DeployTests(unittest.TestCase):
         proc = subprocess.Popen(plist["ProgramArguments"], env=plist["EnvironmentVariables"],
                                 cwd=plist["WorkingDirectory"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
-            body = b""
-            for _ in range(50):
-                try:
-                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1) as resp:
-                        body = resp.read()
-                    break
-                except OSError:
-                    time.sleep(0.1)
+            body = wait_for_url(f"http://127.0.0.1:{port}/", timeout=10)
             self.assertIn(b"passkey-vault", body.lower())
             code_file = self.prefix / "data/setup-code"
             setup = code_file.read_text().strip()

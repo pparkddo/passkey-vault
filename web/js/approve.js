@@ -8,7 +8,6 @@ import { decryptItem, importRequesterKey, rsaEncryptForRequester } from './vault
 const statusBox = $('#status');
 const FINAL = {
   approved: 'This request was already approved.',
-  delivering: 'This request was already approved.',
   denied: 'This request was denied.',
   expired: 'This request expired. Ask the requester to send a new one.',
   consumed: 'This request was already used.',

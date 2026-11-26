@@ -1,7 +1,7 @@
 // Shared page code: API calls, safe DOM building (never innerHTML), unlocking the master key.
 
 import { b64urlDecode, b64urlEncode } from './formats.js';
-import { deriveWrapKey, unwrapMasterKey } from './vaultcrypto.js';
+import { deriveWrapKey, unwrapMasterKey, wrapMasterKey } from './vaultcrypto.js';
 import { getAssertion } from './webauthn.js';
 
 export const $ = (sel) => document.querySelector(sel);
@@ -67,7 +67,7 @@ export async function busy(buttons, fn) {
 /**
  * Sign with a passkey (+PRF) and unwrap that passkey's copy of the master key.
  * The PRF bytes are overwritten as soon as the wrap key is derived.
- * Returns { assertion (JSON for the server), credentialId, masterKey (CryptoKey) }.
+ * Returns { assertion (JSON for the server), masterKey (CryptoKey) }.
  */
 export async function signAndUnlock(state, challenge, { allowIds, extractable = false } = {}) {
   const ids = allowIds ?? state.credentials.map((c) => c.id);
@@ -79,14 +79,20 @@ export async function signAndUnlock(state, challenge, { allowIds, extractable = 
     const masterKey = await unwrapMasterKey(wrapKey, {
       iv: b64urlDecode(entry.wrapped_master_key.iv), ct: b64urlDecode(entry.wrapped_master_key.ct),
     }, b64urlDecode(credentialId), { extractable });
-    return { assertion: json, credentialId, masterKey };
+    return { assertion: json, masterKey };
   } finally {
     prf.fill(0);
   }
 }
 
-export function wrappedToJson(w) {
-  return { iv: b64urlEncode(w.iv), ct: b64urlEncode(w.ct) };
+/** Wrap the master key for a passkey just created by createPasskey(); zeroes its PRF bytes. */
+export async function wrapForNewPasskey(created, masterKey) {
+  try {
+    const w = await wrapMasterKey(await deriveWrapKey(created.prf), masterKey, created.rawId);
+    return { iv: b64urlEncode(w.iv), ct: b64urlEncode(w.ct) };
+  } finally {
+    created.prf.fill(0);
+  }
 }
 
 /** "4:07" style remaining time. */

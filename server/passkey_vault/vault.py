@@ -1,8 +1,11 @@
 """Vault rules on top of a VaultStore. The server only ever holds ciphertext and metadata.
 
 Every change reads the latest document, applies the rule, and saves with compare-and-swap on the
-revision, retrying on conflict. That keeps the rules correct even when several server processes
-share one database backend.
+revision, retrying on conflict, so concurrent writers never lose an update.
+
+Signed changes also carry the passkey's new signature counter (`signer`). It is checked and stored
+in the same compare-and-swap as the change itself: one write per operation, and a counter can never
+be moved backwards by a stale read.
 """
 
 from __future__ import annotations
@@ -13,17 +16,30 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .audit import utc_now_iso
+from .errors import ApiError
 from .storage import Document, StoreConflict, VaultStore, atomic_write
 
 FORMAT = "passkey-vault/vault/v1"
 _SETUP_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"  # no 0/O/1/I/L/U
 _CAS_RETRIES = 5
 
+Signer = tuple[str, int]  # (credential id, new signature counter)
 
-class VaultError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400) -> None:
-        super().__init__(message)
-        self.code, self.message, self.status = code, message, status
+
+def _not_initialized() -> ApiError:
+    return ApiError(409, "vault_not_initialized", "the vault has not been set up yet")
+
+
+def _apply_signer(doc: Document, signer: Signer | None) -> None:
+    if signer is None:
+        return
+    cred_id, count = signer
+    cred = next((c for c in doc["credentials"] if c["id"] == cred_id), None)
+    if cred is None:
+        raise ApiError(403, "unknown_credential", "this passkey is not registered")
+    if (count or cred["sign_count"]) and count <= cred["sign_count"]:
+        raise ApiError(400, "invalid_webauthn", "signature counter did not increase; possible cloned authenticator")
+    cred["sign_count"] = count
 
 
 class Vault:
@@ -40,11 +56,22 @@ class Vault:
 
     # ---- reads (always from the store, so other processes' writes are visible) ----
     def snapshot(self) -> Document:
+        """The current document, or {} before setup. Load once per request and reuse it."""
         return self._store.load()[0] or {}
 
     @property
     def initialized(self) -> bool:
-        return self._store.load()[0] is not None
+        return bool(self.snapshot())
+
+    def require_initialized(self) -> Document:
+        doc = self.snapshot()
+        if not doc:
+            raise _not_initialized()
+        return doc
+
+    def require_uninitialized(self) -> None:
+        if self.snapshot():
+            raise ApiError(409, "already_initialized", "the vault already exists")
 
     def credential(self, cred_id_b64: str) -> dict[str, Any] | None:
         return next((c for c in self.snapshot().get("credentials", []) if c["id"] == cred_id_b64), None)
@@ -75,20 +102,19 @@ class Vault:
         return hmac.compare_digest(norm(given), norm(expected))
 
     # ---- writes ----
-    def _mutate(self, change: Callable[[Document], bool | None]) -> None:
-        """Apply change(doc) and save. change returns False to skip saving."""
+    def _mutate(self, change: Callable[[Document], None], signer: Signer | None) -> None:
         for _ in range(_CAS_RETRIES):
             doc, revision = self._store.load()
             if doc is None:
-                raise VaultError("vault_not_initialized", "the vault has not been set up yet", 409)
-            if change(doc) is False:
-                return
+                raise _not_initialized()
+            _apply_signer(doc, signer)
+            change(doc)
             try:
                 self._store.save(doc, revision)
                 return
             except StoreConflict:
                 continue
-        raise VaultError("storage_conflict", "the vault is being changed concurrently; try again", 503)
+        raise ApiError(503, "storage_conflict", "the vault is being changed concurrently; try again")
 
     def initialize(self, credential: dict[str, Any]) -> None:
         doc = {"format": FORMAT, "rp_id": self._rp_id, "created_at": utc_now_iso(),
@@ -96,48 +122,42 @@ class Vault:
         try:
             self._store.save(doc, 0)
         except StoreConflict:
-            raise VaultError("already_initialized", "the vault already exists", 409) from None
+            raise ApiError(409, "already_initialized", "the vault already exists") from None
         self._setup_code_path.unlink(missing_ok=True)
 
-    def update_sign_count(self, cred_id_b64: str, sign_count: int) -> None:
-        def change(doc: Document) -> bool:
-            for c in doc["credentials"]:
-                if c["id"] == cred_id_b64 and c["sign_count"] != sign_count:
-                    c["sign_count"] = sign_count
-                    return True
-            return False
+    def record_signature(self, signer: Signer) -> None:
+        """For signed actions that change nothing else in the vault (approvals)."""
+        self._mutate(lambda doc: None, signer)
 
-        self._mutate(change)
-
-    def add_credential(self, credential: dict[str, Any]) -> None:
+    def add_credential(self, credential: dict[str, Any], signer: Signer) -> None:
         def change(doc: Document) -> None:
             if any(c["id"] == credential["id"] for c in doc["credentials"]):
-                raise VaultError("duplicate_credential", "this passkey is already registered", 409)
+                raise ApiError(409, "duplicate_credential", "this passkey is already registered")
             doc["credentials"].append(credential)
 
-        self._mutate(change)
+        self._mutate(change, signer)
 
-    def delete_credential(self, cred_id_b64: str) -> None:
+    def delete_credential(self, cred_id_b64: str, signer: Signer) -> None:
         def change(doc: Document) -> None:
             remaining = [c for c in doc["credentials"] if c["id"] != cred_id_b64]
             if len(remaining) == len(doc["credentials"]):
-                raise VaultError("unknown_credential", "no such passkey", 404)
+                raise ApiError(404, "unknown_credential", "no such passkey")
             if not remaining:
-                raise VaultError("last_credential", "the last passkey cannot be deleted", 409)
+                raise ApiError(409, "last_credential", "the last passkey cannot be deleted")
             doc["credentials"] = remaining
 
-        self._mutate(change)
+        self._mutate(change, signer)
 
-    def put_item(self, name: str, item: dict[str, Any]) -> None:
+    def put_item(self, name: str, item: dict[str, Any], signer: Signer) -> None:
         def change(doc: Document) -> None:
             doc["items"][name] = {**item, "updated_at": utc_now_iso()}
 
-        self._mutate(change)
+        self._mutate(change, signer)
 
-    def delete_item(self, name: str) -> None:
+    def delete_item(self, name: str, signer: Signer) -> None:
         def change(doc: Document) -> None:
             if name not in doc["items"]:
-                raise VaultError("unknown_secret", "no such item", 404)
+                raise ApiError(404, "unknown_secret", "no such item")
             del doc["items"][name]
 
-        self._mutate(change)
+        self._mutate(change, signer)

@@ -350,7 +350,7 @@ components:
         created_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         expires_in: { $ref: "#/components/schemas/ExpiresIn" }
-        status: { enum: [pending, approved, delivering, consumed, denied, expired] }
+        status: { enum: [pending, approved, consumed, denied, expired] }
         item:
           oneOf:
             - type: "null"

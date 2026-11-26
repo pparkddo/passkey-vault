@@ -101,14 +101,14 @@ Both implementations (`server/passkey_vault/formats.py`, `web/js/formats.js`) ar
 ### Request
 
 ```
-pending ──approve──▶ approved ──collect──▶ delivering ──response sent──▶ consumed (410 afterwards)
-                                                 └──send failed──▶ approved (collect again)
+pending ──approve──▶ approved ──collected once──▶ consumed (410 afterwards)
    ├──deny──▶ denied
    └──5 minutes──▶ expired        (approved but uncollected requests expire too)
 ```
 
 Requests live in memory. A restart drops them and requesters simply ask again. At most 20 can be
-pending at once. Audit records for creation, approval and denial are written before the state
+pending at once. The ciphertext is dropped only after the response carrying it was written; if
+sending fails, the request stays approved and can be collected again. Audit records for creation, approval and denial are written before the state
 changes, so an event that cannot be recorded does not happen. Pages count down from the server's
 `expires_in`, never from the device clock.
 

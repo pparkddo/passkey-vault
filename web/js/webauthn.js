@@ -3,8 +3,6 @@
 
 import { b64urlDecode, b64urlEncode, prfSalt, toBytes } from './formats.js';
 
-export class PrfUnsupportedError extends Error {}
-
 function prfResult(cred) {
   const ext = cred.getClientExtensionResults?.() ?? {};
   const first = ext.prf?.results?.first;
@@ -65,14 +63,14 @@ export async function getAssertion({ rpId, challenge, allowIds, needPrf = true }
   });
   if (!cred) throw new Error('The passkey did not respond.');
   const { first } = prfResult(cred);
-  if (needPrf && !first) throw new PrfUnsupportedError('This passkey did not return a PRF result.');
+  if (needPrf && !first) throw new Error('This passkey did not return a PRF result, so it cannot unlock the vault.');
   return { json: assertionJson(cred), credentialId: cred.id, prf: first };
 }
 
 /**
  * Create a passkey that supports PRF. If the create response carries no PRF output, sign in once
  * more with the new passkey to obtain it.
- * Returns { json, credentialId (base64url), rawId (Uint8Array), prf (Uint8Array) }.
+ * Returns { json, rawId (Uint8Array), prf (Uint8Array) }.
  */
 export async function createPasskey({ rpId, challenge, label, excludeIds = [] }) {
   const cred = await navigator.credentials.create({
@@ -95,12 +93,12 @@ export async function createPasskey({ rpId, challenge, label, excludeIds = [] })
   if (!cred) throw new Error('The passkey did not respond.');
   const created = prfResult(cred);
   if (created.enabled === false) {
-    throw new PrfUnsupportedError('This passkey provider does not support PRF, so it cannot unlock the vault. Use another one.');
+    throw new Error('This passkey provider does not support PRF, so it cannot unlock the vault. Use another one.');
   }
   let prf = created.first;
   if (!prf) {
     // Some platforms only return PRF output on sign-in. The server does not verify this assertion.
     ({ prf } = await getAssertion({ rpId, challenge: crypto.getRandomValues(new Uint8Array(32)), allowIds: [cred.id] }));
   }
-  return { json: registrationJson(cred), credentialId: cred.id, rawId: new Uint8Array(cred.rawId), prf };
+  return { json: registrationJson(cred), rawId: new Uint8Array(cred.rawId), prf };
 }
