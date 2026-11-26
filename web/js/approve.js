@@ -60,9 +60,12 @@ async function main() {
   $('#r-site').textContent = req.item?.site || 'Not set';
   $('#r-account').textContent = req.item?.account || 'Not set';
   $('#r-command').textContent = req.command;
-  $('#request').hidden = false;
 
-  if (req.status !== 'pending') { close(FINAL[req.status] ?? req.status); return; }
+  if (req.status !== 'pending') {
+    $('#request').hidden = false;
+    close(FINAL[req.status] ?? req.status);
+    return;
+  }
   startCountdown(req.expires_in, (Date.parse(req.expires_at) - Date.parse(req.created_at)) / 1000);
 
   // Check again on this device before any passkey prompt; the server is not trusted for this.
@@ -112,6 +115,9 @@ async function main() {
       setStatus(statusBox, describeError(e), 'error');
     }
   }));
+
+  // Shown only now, so a visible button always has its handler.
+  $('#request').hidden = false;
 }
 
 main();

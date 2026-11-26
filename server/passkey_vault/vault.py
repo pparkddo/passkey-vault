@@ -105,16 +105,17 @@ class Vault:
         return hmac.compare_digest(norm(given), norm(expected))
 
     # ---- writes ----
-    def _mutate(self, change: Callable[[Document], bool | None], signer: Signer | None) -> None:
-        """Apply signer and change, then save. change returns False when it changed nothing; if the
-        signer's counter did not change either, nothing is written."""
+    def _mutate(self, change: Callable[[Document], None] | None, signer: Signer | None) -> None:
+        """Apply signer and change, then save. With no change and an unchanged counter, nothing is written."""
         for _ in range(_CAS_RETRIES):
             doc, revision = self._store.load()
             if doc is None:
                 raise _not_initialized()
             counter_changed = _apply_signer(doc, signer)
-            if change(doc) is False and not counter_changed:
+            if change is None and not counter_changed:
                 return
+            if change is not None:
+                change(doc)
             try:
                 self._store.save(doc, revision)
                 return
@@ -133,7 +134,7 @@ class Vault:
 
     def record_signature(self, signer: Signer) -> None:
         """For signed actions that change nothing else in the vault (approvals)."""
-        self._mutate(lambda doc: False, signer)
+        self._mutate(None, signer)
 
     def add_credential(self, credential: dict[str, Any], signer: Signer) -> None:
         def change(doc: Document) -> None:

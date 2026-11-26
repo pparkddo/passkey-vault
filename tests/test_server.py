@@ -81,6 +81,12 @@ class ServerTestBase(unittest.TestCase):
         req.create()
         return req
 
+    def fake_clock(self, start: float = 1000.0) -> list[float]:
+        """Swap in a request queue driven by a fake clock; advance it with clock[0] += seconds."""
+        clock = [start]
+        self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: clock[0])
+        return clock
+
     def approve_raw(self, req: OneShotRequest, cred, ciphertext: bytes) -> tuple[int, dict]:
         """Sign the real challenge with `cred` but upload an arbitrary ciphertext."""
         challenge = f.approve_challenge(req.id, req.secret, req.command, req.pubkey_der)
@@ -184,16 +190,14 @@ class ApprovalFlowTests(ServerTestBase):
         self.assertEqual((st, body["error"]), (409, "not_pending"), "cannot approve after deny")
 
     def test_expiry(self) -> None:
-        now = [1000.0]
-        self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: now[0])
+        now = self.fake_clock()
         req = self.new_request()
         now[0] += 301
         self.assertEqual(req.poll(0), {"status": "expired"})
         self.assertEqual(self.approver.deny(req.id)[0], 409)
 
     def test_approved_but_uncollected_expires(self) -> None:
-        now = [1000.0]
-        self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: now[0])
+        now = self.fake_clock()
         req = self.new_request()
         self.assertEqual(self.approver.approve(req.id)[0], 200)
         now[0] += 301
@@ -236,18 +240,11 @@ class ApprovalFlowTests(ServerTestBase):
         self.assertEqual(self.app.store.load()[1], before, "an unchanged counter does not rewrite the vault")
 
     def test_expires_in_follows_the_queue_clock(self) -> None:
-        now = [1000.0]
-        self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: now[0])
+        now = self.fake_clock()
         req = self.new_request()
         now[0] += 100
         self.assertEqual(self.approver.call("GET", f"/api/requests/{req.id}")[1]["expires_in"], 200)
         self.assertEqual(self.approver.state()["pending"][0]["expires_in"], 200)
-
-    def test_expires_in_uses_server_clock(self) -> None:
-        req = self.new_request()
-        view = self.approver.call("GET", f"/api/requests/{req.id}")[1]
-        self.assertTrue(295 <= view["expires_in"] <= 300)
-        self.assertTrue(295 <= self.approver.state()["pending"][0]["expires_in"] <= 300)
 
     def test_too_many_pending(self) -> None:
         for _ in range(20):

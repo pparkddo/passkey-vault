@@ -47,6 +47,10 @@ class Request:
         return hashlib.sha256(self.pubkey_der).hexdigest()
 
     @property
+    def expires_at(self) -> str:
+        return utc_now_iso(self.expires)
+
+    @property
     def visible_status(self) -> str:
         return "approved" if self.status == "delivering" else self.status
 
@@ -54,7 +58,7 @@ class Request:
         """now: the queue's clock, so expires_in agrees with how the queue decides expiry."""
         return {
             "id": self.id, "secret": self.secret, "command": self.command, "pubkey": b64url_encode(self.pubkey_der),
-            "created_at": utc_now_iso(self.created), "expires_at": utc_now_iso(self.expires),
+            "created_at": utc_now_iso(self.created), "expires_at": self.expires_at,
             # Remaining lifetime by the server's clock, so clients never depend on their own clock.
             "expires_in": max(0, round(self.expires - now)),
             "status": self.visible_status,
@@ -100,7 +104,7 @@ class RequestQueue:
                           key_bytes=key_bytes, created=now, expires=now + self._ttl)
             # Audit first: if the record cannot be written, the request does not exist.
             self._audit.write("request_created", id=req.id, secret=secret, command=command,
-                              pubkey_sha256=req.pubkey_sha256, expires_at=utc_now_iso(req.expires))
+                              pubkey_sha256=req.pubkey_sha256, expires_at=req.expires_at)
             self._items[req.id] = req
             return req
 
@@ -115,7 +119,8 @@ class RequestQueue:
         with self._cond:
             now = self._clock()
             self._refresh(now)
-            return [r.public_view(now) for r in self._items.values() if r.status == "pending"]
+            pending = [r for r in self._items.values() if r.status == "pending"]
+        return [r.public_view(now) for r in pending]  # built outside the lock
 
     def approve(self, req_id: str, ciphertext: bytes, audit_fields: dict) -> None:
         with self._cond:

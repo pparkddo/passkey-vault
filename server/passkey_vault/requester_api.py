@@ -7,7 +7,6 @@ import re
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
-from .audit import utc_now_iso
 from .config import MAX_WAIT_SECONDS, host_name
 from .errors import ApiError
 from .formats import MAX_RSA_BITS, MIN_RSA_BITS, b64url_decode, validate_command
@@ -57,7 +56,7 @@ class RequesterHandler(BaseHandler):
         self.send_json(201, {
             "id": req.id,
             "approve_url": f"{self.app.config.origin}/approve?id={req.id}",
-            "expires_at": utc_now_iso(req.expires),
+            "expires_at": req.expires_at,
         })
 
     def route_collect(self, req_id: str) -> None:
