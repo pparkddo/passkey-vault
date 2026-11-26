@@ -2,6 +2,7 @@
 
     uv run python tests/e2e_virtual_authenticator.py
     PV_SCREENSHOTS=/tmp/shots uv run python tests/e2e_virtual_authenticator.py   # also save screenshots
+    PV_E2E_CPU_THROTTLE=8 uv run python tests/e2e_virtual_authenticator.py      # slow the page down 8x
 
 Uses the Chromium that Playwright installed; set PV_CHROMIUM to pick an executable explicitly.
 Virtual authenticators are not real devices; see docs/verification.md for manual device tests.
@@ -82,6 +83,9 @@ class E2E(unittest.TestCase):
         self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2)
         self.page = self.context.new_page()
         self.page.set_default_timeout(TIMEOUT)
+        if os.environ.get("PV_E2E_CPU_THROTTLE"):  # e.g. 8: shake out timing assumptions, like a slow CI runner
+            self.context.new_cdp_session(self.page).send(
+                "Emulation.setCPUThrottlingRate", {"rate": float(os.environ["PV_E2E_CPU_THROTTLE"])})
         self.console: list[str] = []
         self.page.on("console", lambda m: self.console.append(f"{m.type}: {m.text}"))
         self.page.on("pageerror", lambda e: self.console.append(f"pageerror: {e}"))
@@ -100,6 +104,11 @@ class E2E(unittest.TestCase):
             const orig = navigator.credentials.get.bind(navigator.credentials);
             navigator.credentials.get = async (opts) => { await window.pvBeforeGet(); return orig(opts); };
         })()""")
+
+    def open_request(self, url: str) -> None:
+        """Open an approval link and wait until the page has loaded and rendered the request."""
+        self.page.goto(url)
+        self.page.locator("#request").wait_for()
 
     def shot(self, name: str) -> None:
         if SHOTS:
@@ -161,7 +170,7 @@ class E2E(unittest.TestCase):
         page.goto(self.origin + "/")
         page.locator("#pending-list a").first.wait_for()
         self.shot("02-manage")
-        page.goto(req.approve_url)
+        self.open_request(req.approve_url)
         self.assertEqual(page.inner_text("#r-command"), req.command)
         self.assertEqual(page.inner_text("#r-site"), "github.com")
         self.assertEqual(page.inner_text("#r-account"), "me@example.com")
@@ -172,14 +181,14 @@ class E2E(unittest.TestCase):
         t.join(30)
         self.assertEqual(result, {"secret": PASSWORD})
 
-        page.goto(req.approve_url)
+        self.open_request(req.approve_url)
         self.status("already")
         self.assertTrue(page.locator("#decision").is_hidden(), "a used request cannot be approved again")
 
         # 4) deny, on a device whose clock is 10 minutes fast: the request must still look live
         page.add_init_script("Date.now = ((now) => () => now() + 600000)(Date.now);")
         req, result, t = self.request("echo denied")
-        page.goto(req.approve_url)
+        self.open_request(req.approve_url)
         self.assertTrue(page.locator("#b-approve").is_visible(), "clock skew must not hide the decision")
         self.assertRegex(page.inner_text("#r-expires"), r"^[45]:\d\d$")
         page.click("#b-deny")
@@ -203,7 +212,7 @@ class E2E(unittest.TestCase):
         self.assertEqual([c["name"] for c in self.app.vault.snapshot()["credentials"]], ["Laptop", "Security key"])
         cdp.send("WebAuthn.removeVirtualAuthenticator", {"authenticatorId": auth_a})  # the first device is lost
         req, result, t = self.request("echo with-the-second-passkey")
-        page.goto(req.approve_url)
+        self.open_request(req.approve_url)
         page.click("#b-approve")
         self.status("Approved")
         t.join(30)
@@ -214,7 +223,7 @@ class E2E(unittest.TestCase):
         doc["items"]["github"]["account"] = "attacker@example.com"
         self.app.store.save(doc, rev)
         req, result, t = self.request("echo tampered")
-        page.goto(req.approve_url)
+        self.open_request(req.approve_url)
         page.click("#b-approve")
         self.status("Decryption failed")
         self.assertEqual(req.poll(0)["status"], "pending", "a tampered item is never approved")
