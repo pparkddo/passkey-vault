@@ -21,8 +21,9 @@ export const MAX_COMMAND_BYTES = 4096;
 export const MIN_RSA_BITS = 2048;
 export const MAX_RSA_BITS = 4096;
 
-// C0/C1 controls, bidi controls, line/paragraph separators
-const FORBIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]/u;
+// Same categories as the server: controls, format characters (bidi, zero-width), lone surrogates,
+// line/paragraph separators.
+const FORBIDDEN_CHARS = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 export function toBytes(x) {
   if (typeof x === 'string') return te.encode(x);
@@ -117,8 +118,8 @@ export function hasForbiddenChars(s) {
 /** Returns a reason string if invalid, otherwise null. */
 export function validateCommand(command) {
   if (typeof command !== 'string') return 'command must be a string';
+  if (hasForbiddenChars(command)) return 'command must not contain control, format (bidi, zero-width) or separator characters';
   const n = te.encode(command).length;
   if (n < 1 || n > MAX_COMMAND_BYTES) return `command must be 1-${MAX_COMMAND_BYTES} UTF-8 bytes`;
-  if (hasForbiddenChars(command)) return 'command must not contain control characters, line breaks or bidi controls';
   return null;
 }

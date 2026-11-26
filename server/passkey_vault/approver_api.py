@@ -98,8 +98,8 @@ class ApproverHandler(BaseHandler):
                             for c in snap.get("credentials", [])],
             "items": [{"name": n, "site": it["site"], "account": it["account"], "updated_at": it["updated_at"]}
                       for n, it in sorted(snap.get("items", {}).items())],
-            "pending": [{k: r.public_view()[k] for k in ("id", "secret", "command", "expires_at")}
-                        for r in self.app.queue.pending()],
+            "pending": [{k: v[k] for k in ("id", "secret", "command", "expires_at", "expires_in")}
+                        for v in (r.public_view() for r in self.app.queue.pending())],
         })
 
     def route_nonce(self) -> None:

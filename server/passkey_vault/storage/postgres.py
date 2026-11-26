@@ -50,7 +50,10 @@ class _Connection:
         self._conn = None
         self.execute(SCHEMA)
 
-    def execute(self, sql: str, params: tuple = ()) -> list[tuple]:
+    def execute(self, sql: str, params: tuple = (), retry: bool = True) -> list[tuple]:
+        """Run one statement. On a broken connection, reconnect and (only if retry) run it again.
+        Non-idempotent statements must pass retry=False: the first attempt may have committed."""
+        broken = (self._psycopg.OperationalError, self._psycopg.InterfaceError)
         with self._lock:
             for attempt in (1, 2):
                 if self._conn is None or self._conn.closed:
@@ -59,9 +62,9 @@ class _Connection:
                     with self._conn.cursor() as cur:
                         cur.execute(sql, params)
                         return cur.fetchall() if cur.description else [("rowcount", cur.rowcount)]
-                except self._psycopg.OperationalError:
+                except broken:
                     self._conn = None
-                    if attempt == 2:
+                    if attempt == 2 or not retry:
                         raise
         raise AssertionError("unreachable")
 
@@ -103,7 +106,7 @@ class PostgresAuditSink:
         self._db = conn
 
     def append(self, record: dict[str, Any]) -> None:
-        self._db.execute("INSERT INTO passkey_vault_audit (record) VALUES (%s)", (self._db.Jsonb(record),))
+        self._db.execute("INSERT INTO passkey_vault_audit (record) VALUES (%s)", (self._db.Jsonb(record),), retry=False)
 
     def close(self) -> None:
         self._db.close()

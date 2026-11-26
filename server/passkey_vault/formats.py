@@ -10,6 +10,7 @@ import base64
 import hashlib
 import re
 import struct
+import unicodedata
 
 LABEL_TAG = b"passkey-vault/oaep-label/v1"
 APPROVE_TAG = b"passkey-vault/approve/v1"
@@ -27,11 +28,10 @@ MAX_META_CHARS = 200
 MIN_RSA_BITS = 2048
 MAX_RSA_BITS = 4096
 
-# Characters that can be used to disguise what the approver sees:
-# C0/C1 controls, bidi controls, line/paragraph separators.
-_FORBIDDEN_CHARS = re.compile(
-    "[\\u0000-\\u001f\\u007f-\\u009f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069\\u2028\\u2029]"
-)
+# Characters that can disguise what the approver sees, or that cannot be encoded: controls (Cc),
+# format characters such as bidi marks and zero-width characters (Cf), lone surrogates (Cs), and
+# line/paragraph separators (Zl, Zp).
+FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 def _to_bytes(x: str | bytes) -> bytes:
@@ -82,18 +82,18 @@ def b64url_decode(s: str) -> bytes:
 
 
 def has_forbidden_chars(s: str) -> bool:
-    return bool(_FORBIDDEN_CHARS.search(s))
+    return any(unicodedata.category(ch) in FORBIDDEN_CATEGORIES for ch in s)
 
 
 def validate_command(command: object) -> str | None:
     """Return a reason string if invalid, otherwise None."""
     if not isinstance(command, str):
         return "command must be a string"
+    if has_forbidden_chars(command):
+        return "command must not contain control, format (bidi, zero-width) or separator characters"
     n = len(command.encode("utf-8"))
     if n < 1 or n > MAX_COMMAND_BYTES:
         return f"command must be 1-{MAX_COMMAND_BYTES} UTF-8 bytes"
-    if has_forbidden_chars(command):
-        return "command must not contain control characters, line breaks or bidi controls"
     return None
 
 
@@ -103,5 +103,5 @@ def validate_meta(value: object, field: str) -> str | None:
     if len(value) > MAX_META_CHARS:
         return f"{field} must be at most {MAX_META_CHARS} characters"
     if has_forbidden_chars(value):
-        return f"{field} must not contain control characters"
+        return f"{field} must not contain control, format or separator characters"
     return None

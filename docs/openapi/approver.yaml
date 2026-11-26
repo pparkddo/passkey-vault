@@ -289,6 +289,10 @@ components:
     Base64Url: { type: string, pattern: "^[A-Za-z0-9_-]*$" }
     Timestamp: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
     SecretName: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
+    ExpiresIn:
+      type: integer
+      minimum: 0
+      description: Seconds until expiry by the server's clock. Clients count down from this, not from their own clock.
     Label: { type: string, minLength: 1, maxLength: 64 }
     Meta: { type: string, maxLength: 200 }
     Wrapped:
@@ -328,15 +332,16 @@ components:
           type: array
           items:
             type: object
-            required: [id, secret, command, expires_at]
+            required: [id, secret, command, expires_at, expires_in]
             properties:
               id: { type: string }
               secret: { $ref: "#/components/schemas/SecretName" }
               command: { type: string }
               expires_at: { $ref: "#/components/schemas/Timestamp" }
+              expires_in: { $ref: "#/components/schemas/ExpiresIn" }
     RequestView:
       type: object
-      required: [id, secret, command, pubkey, created_at, expires_at, status, item]
+      required: [id, secret, command, pubkey, created_at, expires_at, expires_in, status, item]
       properties:
         id: { type: string }
         secret: { $ref: "#/components/schemas/SecretName" }
@@ -344,7 +349,8 @@ components:
         pubkey: { $ref: "#/components/schemas/Base64Url" }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
-        status: { enum: [pending, approved, denied, expired, consumed] }
+        expires_in: { $ref: "#/components/schemas/ExpiresIn" }
+        status: { enum: [pending, approved, delivering, consumed, denied, expired] }
         item:
           oneOf:
             - type: "null"

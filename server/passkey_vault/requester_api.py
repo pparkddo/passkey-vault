@@ -7,7 +7,7 @@ import re
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
-from .config import MAX_WAIT_SECONDS
+from .config import MAX_WAIT_SECONDS, host_name
 from .formats import MAX_RSA_BITS, MIN_RSA_BITS, REQUEST_ID_RE, SECRET_NAME_RE, b64url_decode, validate_command
 from .http_common import BaseHandler, HttpError
 
@@ -33,14 +33,6 @@ def parse_requester_pubkey(value: object) -> bytes:
 
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-
-
-def host_name(header: str | None) -> str:
-    """Host header -> lower-case host name without the port ("[::1]:8741" -> "::1")."""
-    h = (header or "").strip().lower()
-    if h.startswith("["):
-        return h[1:h.find("]")] if "]" in h else ""
-    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
 class RequesterHandler(BaseHandler):
@@ -76,7 +68,17 @@ class RequesterHandler(BaseHandler):
             raise HttpError(400, "bad_request", f"wait must be an integer from 0 to {MAX_WAIT_SECONDS}")
         if not REQUEST_ID_RE.fullmatch(req_id):
             raise HttpError(404, "not_found", "no such request")
-        self.send_json(200, self.app.queue.collect(req_id, float(raw[0])))
+        result = self.app.queue.collect(req_id, float(raw[0]))
+        if result["status"] != "approved":
+            self.send_json(200, result)
+            return
+        delivered = False
+        try:
+            self.send_json(200, result)
+            self.wfile.flush()
+            delivered = True
+        finally:
+            self.app.queue.finish_delivery(req_id, delivered)
 
     routes = [
         ("POST", re.compile(r"/requests"), route_create_request),

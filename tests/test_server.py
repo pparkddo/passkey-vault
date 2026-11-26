@@ -194,6 +194,40 @@ class ApprovalFlowTests(ServerTestBase):
         now[0] += 301
         self.assertEqual(req.poll(0), {"status": "expired"})
 
+    def test_failed_audit_blocks_approval(self) -> None:
+        req = self.new_request()
+        sink = self.app.audit_sink
+        original = sink.append
+
+        def failing(record):
+            if record["event"] == "request_approved":
+                raise OSError("disk full")
+            original(record)
+
+        sink.append = failing
+        try:
+            self.assertEqual(self.approver.approve(req.id)[0], 500)
+        finally:
+            sink.append = original
+        self.assertEqual(req.poll(0), {"status": "pending"}, "an approval that cannot be audited does not happen")
+        self.assertEqual(self.approver.approve(req.id)[0], 200)
+
+    def test_failed_send_keeps_ciphertext_for_retry(self) -> None:
+        req = self.new_request()
+        self.approver.approve(req.id)
+        first = self.app.queue.collect(req.id, 0)
+        self.assertEqual(first["status"], "approved")
+        self.assertEqual(self.app.queue.collect(req.id, 0), {"status": "pending"}, "a concurrent poll waits")
+        self.app.queue.finish_delivery(req.id, delivered=False)  # e.g. the requester disconnected
+        self.assertEqual(req.decrypt(f.b64url_decode(req.poll(0)["ciphertext"])).decode(), SECRET)
+        self.assertEqual(raw_request(self.requester_port, "GET", f"/requests/{req.id}")[0], 410)
+
+    def test_expires_in_uses_server_clock(self) -> None:
+        req = self.new_request()
+        view = self.approver.call("GET", f"/api/requests/{req.id}")[1]
+        self.assertTrue(295 <= view["expires_in"] <= 300)
+        self.assertTrue(295 <= self.approver.state()["pending"][0]["expires_in"] <= 300)
+
     def test_too_many_pending(self) -> None:
         for _ in range(20):
             self.new_request()
@@ -237,7 +271,9 @@ class LocalApiValidationTests(ServerTestBase):
             ({**ok, "secret": "../x"}, 400, "invalid_secret_name"),
             ({**ok, "secret": "nope"}, 404, "unknown_secret"),
             ({**ok, "command": "a\nb"}, 400, "invalid_command"),
-            ({**ok, "command": "echo ‮"}, 400, "invalid_command"),
+            ({**ok, "command": "echo \u202e"}, 400, "invalid_command"),
+            ({**ok, "command": "echo \u061c\u200b"}, 400, "invalid_command"),
+            ({**ok, "command": "\ud800"}, 400, "invalid_command"),
             ({**ok, "pubkey": "!!"}, 400, "invalid_pubkey"),
             ({**ok, "pubkey": f.b64url_encode(small)}, 400, "key_too_small"),
             ({**ok, "pubkey": f.b64url_encode(ecpub)}, 400, "invalid_pubkey"),
@@ -335,6 +371,23 @@ class ApproverApiTests(ServerTestBase):
         self.assertEqual((st, body["error"]), (403, "unknown_credential"))
         self.assertEqual(len(self.approver.state()["credentials"]), 1)
 
+    def test_nonces_survive_floods_and_reject_forgery(self) -> None:
+        nonces = self.app.nonces
+        keep = nonces.issue("put-item")
+        for _ in range(1000):
+            nonces.issue("put-item")
+        self.assertFalse(nonces.consume(keep, "delete-item"), "bound to its operation")
+        self.assertFalse(nonces.consume(keep[:-1] + bytes([keep[-1] ^ 1]), "put-item"), "forged tag")
+        self.assertTrue(nonces.consume(keep, "put-item"), "a flood does not evict an issued nonce")
+        self.assertFalse(nonces.consume(keep, "put-item"), "single use")
+        from passkey_vault.requests_queue import NonceStore
+
+        now = [1000.0]
+        short = NonceStore(ttl=10, clock=lambda: now[0])
+        n = short.issue("setup")
+        now[0] += 11
+        self.assertFalse(short.consume(n, "setup"), "expired")
+
     def test_delete_item(self) -> None:
         self.assertEqual(self.approver.delete_item("github")[0], 200)
         self.assertEqual(self.approver.state()["items"], [])
@@ -364,6 +417,18 @@ class ApproverApiTests(ServerTestBase):
         cred.sign_count = 3  # counter went backwards: possible cloned authenticator
         st, body = self.approver.delete_item("github")
         self.assertEqual((st, body["error"]), (400, "invalid_webauthn"))
+
+
+class ConfigTests(unittest.TestCase):
+    def test_origin_is_normalized_like_browsers(self) -> None:
+        from passkey_vault.config import normalize_origin, parse_args
+
+        self.assertEqual(normalize_origin("https://Vault.Example.com:443/"), "https://vault.example.com")
+        self.assertEqual(normalize_origin("https://vault.example.com:8443"), "https://vault.example.com:8443")
+        cfg = parse_args(["--origin", "HTTPS://Vault.example.com:443", "--data-dir", "/tmp/x",
+                          "--requester-hosts", "Vault.internal:8741, other"])
+        self.assertEqual((cfg.origin, cfg.rp_id), ("https://vault.example.com", "vault.example.com"))
+        self.assertEqual(cfg.requester_hosts, ("vault.internal", "other"))
 
 
 class PersistenceTests(ServerTestBase):

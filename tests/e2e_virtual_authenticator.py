@@ -180,9 +180,12 @@ class E2E(unittest.TestCase):
         self.status("already")
         self.assertTrue(page.locator("#decision").is_hidden(), "a used request cannot be approved again")
 
-        # 4) deny
+        # 4) deny, on a device whose clock is 10 minutes fast: the request must still look live
+        page.add_init_script("Date.now = ((now) => () => now() + 600000)(Date.now);")
         req, result, t = self.request("echo denied")
         page.goto(req.approve_url)
+        self.assertTrue(page.locator("#b-approve").is_visible(), "clock skew must not hide the decision")
+        self.assertRegex(page.inner_text("#r-expires"), r"^[45]:\d\d$")
         page.click("#b-deny")
         self.status("Denied")
         t.join(30)

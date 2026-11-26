@@ -8,6 +8,7 @@ import { decryptItem, importRequesterKey, rsaEncryptForRequester } from './vault
 const statusBox = $('#status');
 const FINAL = {
   approved: 'This request was already approved.',
+  delivering: 'This request was already approved.',
   denied: 'This request was denied.',
   expired: 'This request expired. Ask the requester to send a new one.',
   consumed: 'This request was already used.',
@@ -23,12 +24,14 @@ function close(message, kind = 'info') {
   setStatus(statusBox, message, kind);
 }
 
-function startCountdown(expiresAt, createdAt) {
-  const end = Date.parse(expiresAt);
-  const total = Math.max(1, end - Date.parse(createdAt));
+// Counts down from the server's expires_in using the monotonic clock, so a wrong device clock
+// cannot make a live request look expired (or the reverse).
+function startCountdown(expiresIn, lifetime) {
+  const end = performance.now() + expiresIn * 1000;
+  const total = Math.max(1, lifetime * 1000);
   const fuse = $('#fuse');
   const tick = () => {
-    const left = Math.max(0, end - Date.now());
+    const left = Math.max(0, end - performance.now());
     $('#r-expires').textContent = formatRemaining(left / 1000);
     fuse.style.transform = `scaleX(${left / total})`;
     document.body.classList.toggle('is-low', left / 1000 <= LOW_SECONDS);
@@ -61,7 +64,7 @@ async function main() {
   $('#request').hidden = false;
 
   if (req.status !== 'pending') { close(FINAL[req.status] ?? req.status); return; }
-  startCountdown(req.expires_at, req.created_at);
+  startCountdown(req.expires_in, (Date.parse(req.expires_at) - Date.parse(req.created_at)) / 1000);
 
   // Check again on this device before any passkey prompt; the server is not trusted for this.
   const problems = [];

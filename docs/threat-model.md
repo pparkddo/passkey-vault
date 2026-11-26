@@ -49,7 +49,7 @@ Running the server on a different host from the requester satisfies this. If the
 | Edit storage to move item ciphertext or change the displayed site/account | The item AAD covers name, site and account; decryption fails in the browser |
 | Collect the same secret twice | Delivered once, then deleted; later reads return 410 |
 | Drive a browser against the requester door (CSRF, DNS rebinding) | `Host` allow-list, JSON-only bodies, no CORS |
-| Hide text in the command shown to the approver | Control characters, line breaks and bidi controls are rejected; the page shows the whole command |
+| Hide or reorder text in the command shown to the approver | Control, format (bidi, zero-width), surrogate and separator characters are rejected on the server and again in the page; the page shows the whole command |
 | Load attacker code into the page | No external resources; CSP `script-src 'self'`; untrusted strings rendered with `textContent` |
 | Clone an authenticator | Signature counters must not go backwards (for authenticators that use counters) |
 

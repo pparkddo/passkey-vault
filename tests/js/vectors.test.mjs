@@ -97,7 +97,10 @@ test('command validation', () => {
   assert.notEqual(F.validateCommand(''), null);
   assert.notEqual(F.validateCommand('a\nb'), null);
   assert.notEqual(F.validateCommand('a\tb'), null);
-  assert.notEqual(F.validateCommand('echo ‮abc'), null);
+  assert.notEqual(F.validateCommand('echo \u202Eabc'), null);
+  for (const bad of ['a\u061Cb', 'a\u200Bb', 'a\uFEFFb', 'a\u00ADb', '\uD800']) {
+    assert.notEqual(F.validateCommand(bad), null, bad);
+  }
   assert.notEqual(F.validateCommand('a'.repeat(4097)), null);
 });
 

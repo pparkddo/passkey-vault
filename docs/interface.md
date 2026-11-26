@@ -24,7 +24,7 @@ RFC 2119.
 | Field | Rules |
 |---|---|
 | `secret` | Vault item name, `^[A-Za-z0-9._-]{1,64}$`; the item must exist |
-| `command` | The command exactly as it will be shown and run. 1–4096 UTF-8 bytes. No C0/C1 control characters (so no line breaks or tabs), no bidi controls (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), no U+2028/U+2029 |
+| `command` | The command exactly as it will be shown and run. 1–4096 UTF-8 bytes. No characters in the Unicode categories Cc (controls, so no line breaks or tabs), Cf (format: bidi marks, zero-width characters, soft hyphen), Cs (lone surrogates), Zl or Zp |
 | `pubkey` | RSA public key as SPKI DER, base64url without padding. 2048–4096 bits (a multiple of 8), exponent 65537 |
 
 `201 Created`:

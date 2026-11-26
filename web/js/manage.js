@@ -34,7 +34,7 @@ function passkeyRow(c) {
 }
 
 function pendingRow(p) {
-  const left = (Date.parse(p.expires_at) - Date.now()) / 1000;
+  const left = p.expires_in;
   return el('li', { class: 'row' },
     el('a', { class: 'row-main row-link', href: `/approve?id=${encodeURIComponent(p.id)}` },
       el('span', { class: 'row-title' }, p.secret),
@@ -84,6 +84,13 @@ $('#f-setup').addEventListener('submit', (ev) => {
 });
 
 // ---------- secrets ----------
+function resetItemForm() {
+  $('#f-item').reset();
+  $('#item-summary').textContent = 'Add a secret';
+}
+
+$('#item-panel').addEventListener('toggle', (ev) => { if (!ev.target.open) resetItemForm(); });
+
 function editItem(it) {
   $('#item-panel').open = true;
   $('#item-summary').textContent = `Replace ${it.name}`;
@@ -103,6 +110,7 @@ $('#f-item').addEventListener('submit', (ev) => {
     const secretInput = $('#item-secret');
     if (!SECRET_NAME_RE.test(name)) { say('Use 1-64 letters, digits, dots, dashes or underscores for the name.', 'error'); return; }
     const secret = new TextEncoder().encode(secretInput.value);
+    let saved = false;
     try {
       say('Waiting for your passkey…');
       const nonce = await newNonce('put-item');
@@ -111,16 +119,15 @@ $('#f-item').addEventListener('submit', (ev) => {
       await api('POST', '/api/items', {
         nonce: b64urlEncode(nonce), name, site, account, iv: b64urlEncode(enc.iv), ct: b64urlEncode(enc.ct), assertion,
       });
-      ev.target.reset();
-      $('#item-summary').textContent = 'Add a secret';
-      $('#item-panel').open = false;
+      saved = true;
+      $('#item-panel').open = false; // the toggle handler resets the form
       await refresh();
       say(`Saved ${name}.`, 'ok');
     } catch (e) {
       say(describeError(e), 'error');
     } finally {
       secret.fill(0);
-      secretInput.value = '';
+      if (saved) secretInput.value = ''; // keep what was typed if saving failed, so it can be retried
     }
   });
 });

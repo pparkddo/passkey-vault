@@ -17,6 +17,24 @@ MAX_BODY_BYTES = 64 * 1024
 MAX_WAIT_SECONDS = 30
 
 
+def host_name(value: str | None) -> str:
+    """Host header or host[:port] -> lower-case host name without the port ("[::1]:8741" -> "::1")."""
+    h = (value or "").strip().lower()
+    if h.startswith("["):
+        return h[1:h.find("]")] if "]" in h else ""
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def normalize_origin(origin: str) -> str:
+    """Serialize like browsers do: lower-case host, no default port, no trailing slash."""
+    parts = urlsplit(origin)
+    host = parts.hostname or ""
+    host = f"[{host}]" if ":" in host else host
+    default = {"https": 443, "http": 80}[parts.scheme]
+    port = f":{parts.port}" if parts.port and parts.port != default else ""
+    return f"{parts.scheme}://{host}{port}"
+
+
 @dataclass(frozen=True)
 class Config:
     data_dir: Path
@@ -70,9 +88,9 @@ def parse_args(argv: list[str] | None = None) -> Config:
     if parts.scheme == "http" and parts.hostname != "localhost":
         p.error("an http origin is only allowed for localhost (WebAuthn needs a secure context)")
     return Config(
-        data_dir=data_dir.resolve(), rp_id=parts.hostname, origin=origin.rstrip("/"),
+        data_dir=data_dir.resolve(), rp_id=parts.hostname, origin=normalize_origin(origin),
         storage=a.storage or os.environ.get("PASSKEY_VAULT_STORAGE") or None,
-        requester_hosts=tuple(h.strip().lower() for h in
+        requester_hosts=tuple(host_name(h) for h in
                               (a.requester_hosts or os.environ.get("PASSKEY_VAULT_REQUESTER_HOSTS") or "").split(",")
                               if h.strip()),
         approver_port=a.approver_port, requester_port=a.requester_port, bind=a.bind, web_dir=a.web_dir.resolve(), dev=a.dev,

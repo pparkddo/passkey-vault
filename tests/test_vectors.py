@@ -74,7 +74,8 @@ class VectorTests(unittest.TestCase):
     def test_command_validation(self) -> None:
         self.assertIsNone(f.validate_command("ls -la"))
         self.assertIsNone(f.validate_command("echo bücher ✓"))
-        for bad in ["", "a\nb", "a\tb", "echo ‮abc", "x y", "a" * 4097, None]:
+        for bad in ["", "a\nb", "a\tb", "echo \u202eabc", "x\u2028y", "a\u061cb", "a\u200bb",
+                    "a\ufeffb", "a\u00adb", "\ud800", "a" * 4097, None]:
             self.assertIsNotNone(f.validate_command(bad), repr(bad))
 
     def test_lp_is_unambiguous(self) -> None:
