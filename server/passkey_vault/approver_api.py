@@ -102,7 +102,7 @@ class ApproverHandler(BaseHandler):
             "items": [{"name": n, "site": it["site"], "account": it["account"], "updated_at": it["updated_at"]}
                       for n, it in sorted(doc.get("items", {}).items())],
             "pending": [{k: v[k] for k in ("id", "secret", "command", "expires_at", "expires_in")}
-                        for v in (r.public_view() for r in self.app.queue.pending())],
+                        for v in self.app.queue.pending_views()],
         })
 
     def route_nonce(self) -> None:
@@ -117,7 +117,7 @@ class ApproverHandler(BaseHandler):
 
     def route_get_request(self, req_id: str) -> None:
         req = self._request(req_id)
-        view = req.public_view()
+        view = self.app.queue.view(req)
         item = self.app.vault.item(req.secret)
         view["item"] = None if item is None else {
             "name": req.secret, "site": item["site"], "account": item["account"], "iv": item["iv"], "ct": item["ct"],
@@ -129,7 +129,7 @@ class ApproverHandler(BaseHandler):
         body = self.read_object()
         req = self._request(req_id)
         if req.status != "pending":  # cheap early exit before verifying a signature
-            raise ApiError(409, "not_pending", f"request is already {req.public_view()['status']}")
+            raise ApiError(409, "not_pending", f"request is already {req.visible_status}")
         ciphertext = _b64(body.get("ciphertext"), "ciphertext")
         if len(ciphertext) != req.key_bytes:
             raise ApiError(400, "bad_request", "ciphertext length does not match the requester key")

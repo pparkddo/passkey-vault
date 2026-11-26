@@ -30,16 +30,19 @@ def _not_initialized() -> ApiError:
     return ApiError(409, "vault_not_initialized", "the vault has not been set up yet")
 
 
-def _apply_signer(doc: Document, signer: Signer | None) -> None:
+def _apply_signer(doc: Document, signer: Signer | None) -> bool:
+    """Check and store the signer's new counter; return True if the document changed."""
     if signer is None:
-        return
+        return False
     cred_id, count = signer
     cred = next((c for c in doc["credentials"] if c["id"] == cred_id), None)
     if cred is None:
         raise ApiError(403, "unknown_credential", "this passkey is not registered")
     if (count or cred["sign_count"]) and count <= cred["sign_count"]:
         raise ApiError(400, "invalid_webauthn", "signature counter did not increase; possible cloned authenticator")
+    changed = cred["sign_count"] != count
     cred["sign_count"] = count
+    return changed
 
 
 class Vault:
@@ -102,13 +105,16 @@ class Vault:
         return hmac.compare_digest(norm(given), norm(expected))
 
     # ---- writes ----
-    def _mutate(self, change: Callable[[Document], None], signer: Signer | None) -> None:
+    def _mutate(self, change: Callable[[Document], bool | None], signer: Signer | None) -> None:
+        """Apply signer and change, then save. change returns False when it changed nothing; if the
+        signer's counter did not change either, nothing is written."""
         for _ in range(_CAS_RETRIES):
             doc, revision = self._store.load()
             if doc is None:
                 raise _not_initialized()
-            _apply_signer(doc, signer)
-            change(doc)
+            counter_changed = _apply_signer(doc, signer)
+            if change(doc) is False and not counter_changed:
+                return
             try:
                 self._store.save(doc, revision)
                 return
@@ -127,7 +133,7 @@ class Vault:
 
     def record_signature(self, signer: Signer) -> None:
         """For signed actions that change nothing else in the vault (approvals)."""
-        self._mutate(lambda doc: None, signer)
+        self._mutate(lambda doc: False, signer)
 
     def add_credential(self, credential: dict[str, Any], signer: Signer) -> None:
         def change(doc: Document) -> None:

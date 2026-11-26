@@ -12,17 +12,23 @@ const say = (message, kind) => setStatus(statusBox, message, kind);
 const dateOnly = (iso) => (iso ? iso.slice(0, 10) : '');
 
 /**
- * Run one user action: lock all buttons, run fn, refresh the page state, then show fn's success
- * message (or the error). fn returns the success message.
+ * Run one user action: lock all buttons, run fn, show fn's success message (or the error), then
+ * reload the page state. A failed reload never turns a completed change into an error message.
  */
 function action(fn) {
   return busy([...document.querySelectorAll('button')], async () => {
+    let message;
     try {
-      const message = await fn();
+      message = await fn();
+    } catch (e) {
+      say(describeError(e), 'error');
+      return;
+    }
+    try {
       await refresh();
       say(message, 'ok');
     } catch (e) {
-      say(describeError(e), 'error');
+      say(`${message} The page could not be reloaded: ${describeError(e)}`, 'error');
     }
   });
 }

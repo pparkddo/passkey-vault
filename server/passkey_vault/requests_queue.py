@@ -46,13 +46,18 @@ class Request:
     def pubkey_sha256(self) -> str:
         return hashlib.sha256(self.pubkey_der).hexdigest()
 
-    def public_view(self) -> dict:
+    @property
+    def visible_status(self) -> str:
+        return "approved" if self.status == "delivering" else self.status
+
+    def public_view(self, now: float) -> dict:
+        """now: the queue's clock, so expires_in agrees with how the queue decides expiry."""
         return {
             "id": self.id, "secret": self.secret, "command": self.command, "pubkey": b64url_encode(self.pubkey_der),
             "created_at": utc_now_iso(self.created), "expires_at": utc_now_iso(self.expires),
             # Remaining lifetime by the server's clock, so clients never depend on their own clock.
-            "expires_in": max(0, round(self.expires - time.time())),
-            "status": "approved" if self.status == "delivering" else self.status,
+            "expires_in": max(0, round(self.expires - now)),
+            "status": self.visible_status,
         }
 
 
@@ -82,7 +87,7 @@ class RequestQueue:
     def _get_pending(self, req_id: str) -> Request:  # call with the lock held
         r = self._lookup(req_id)
         if r.status != "pending":
-            raise ApiError(409, "not_pending", f"request is already {r.public_view()['status']}")
+            raise ApiError(409, "not_pending", f"request is already {r.visible_status}")
         return r
 
     def create(self, secret: str, command: str, pubkey_der: bytes, key_bytes: int) -> Request:
@@ -103,10 +108,14 @@ class RequestQueue:
         with self._cond:
             return self._lookup(req_id)
 
-    def pending(self) -> list[Request]:
+    def view(self, req: Request) -> dict:
+        return req.public_view(self._clock())
+
+    def pending_views(self) -> list[dict]:
         with self._cond:
-            self._refresh(self._clock())
-            return [r for r in self._items.values() if r.status == "pending"]
+            now = self._clock()
+            self._refresh(now)
+            return [r.public_view(now) for r in self._items.values() if r.status == "pending"]
 
     def approve(self, req_id: str, ciphertext: bytes, audit_fields: dict) -> None:
         with self._cond:

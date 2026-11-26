@@ -229,6 +229,20 @@ class ApprovalFlowTests(ServerTestBase):
         self.assertEqual(req.decrypt(f.b64url_decode(req.poll(0)["ciphertext"])).decode(), SECRET)
         self.assertEqual(raw_request(self.requester_port, "GET", f"/requests/{req.id}")[0], 410)
 
+    def test_approval_with_zero_counter_writes_nothing(self) -> None:
+        req = self.new_request()
+        _, before = self.app.store.load()
+        self.assertEqual(self.approver.approve(req.id)[0], 200)
+        self.assertEqual(self.app.store.load()[1], before, "an unchanged counter does not rewrite the vault")
+
+    def test_expires_in_follows_the_queue_clock(self) -> None:
+        now = [1000.0]
+        self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: now[0])
+        req = self.new_request()
+        now[0] += 100
+        self.assertEqual(self.approver.call("GET", f"/api/requests/{req.id}")[1]["expires_in"], 200)
+        self.assertEqual(self.approver.state()["pending"][0]["expires_in"], 200)
+
     def test_expires_in_uses_server_clock(self) -> None:
         req = self.new_request()
         view = self.approver.call("GET", f"/api/requests/{req.id}")[1]
