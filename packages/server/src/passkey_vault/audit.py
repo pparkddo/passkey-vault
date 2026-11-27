@@ -8,10 +8,12 @@ Two ways to write, by when the event takes effect:
 
 from __future__ import annotations
 
-import sys
+import logging
 import time
 
 from .storage import AuditSink
+
+log = logging.getLogger(__name__)
 
 
 def utc_now_iso(ts: float | None = None) -> str:
@@ -28,5 +30,5 @@ class AuditLog:
     def record(self, event: str, **fields: object) -> None:
         try:
             self.write(event, **fields)
-        except Exception as e:  # noqa: BLE001
-            sys.stderr.write(f"audit write failed for {event}: {e!r}\n")
+        except Exception:
+            log.exception("audit write failed for %s", event)

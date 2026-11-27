@@ -50,10 +50,10 @@ class _Connection:
         self._psycopg, self.Jsonb = _import_psycopg()
         self._dsn = dsn
         self._lock = threading.Lock()
-        self._conn = None
+        self._conn: Any = None
         self.execute(SCHEMA)
 
-    def execute(self, sql: str, params: tuple = (), retry: bool = True) -> tuple[list[tuple], int]:
+    def execute(self, sql: str, params: tuple[Any, ...] = (), retry: bool = True) -> tuple[list[tuple[Any, ...]], int]:
         """Run one statement; return (rows, rowcount). On a broken connection, reconnect and (only if
         retry) run it again. Non-idempotent statements pass retry=False: the first try may have committed."""
         broken = (self._psycopg.OperationalError, self._psycopg.InterfaceError)
@@ -91,11 +91,13 @@ class PostgresVaultStore:
         if expected_revision == 0:
             _, count = self._db.execute(
                 f"INSERT INTO {STATE_TABLE} (id, revision, doc) VALUES (1, %s, %s) ON CONFLICT (id) DO NOTHING",
-                (new, self._db.Jsonb(doc)))
+                (new, self._db.Jsonb(doc)),
+            )
         else:
             _, count = self._db.execute(
                 f"UPDATE {STATE_TABLE} SET revision = %s, doc = %s WHERE id = 1 AND revision = %s",
-                (new, self._db.Jsonb(doc), expected_revision))
+                (new, self._db.Jsonb(doc), expected_revision),
+            )
         if count != 1:
             raise StoreConflict(f"revision changed (expected {expected_revision})")
         return new

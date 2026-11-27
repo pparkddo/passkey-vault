@@ -11,12 +11,12 @@ import urllib.request
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
 from passkey_vault.formats import HKDF_INFO, HKDF_SALT
 
 
-def http_json(method: str, url: str, body: dict | None = None, timeout: float = 10,
-              headers: dict | None = None) -> tuple[int, dict]:
+def http_json(
+    method: str, url: str, body: dict | None = None, timeout: float = 10, headers: dict | None = None
+) -> tuple[int, dict]:
     """JSON request -> (status, JSON body); HTTP errors are returned, not raised."""
     data = None if body is None else json.dumps(body).encode()
     hdrs = {**({"Content-Type": "application/json"} if data else {}), **(headers or {})}

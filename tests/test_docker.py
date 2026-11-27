@@ -36,8 +36,15 @@ def _compose_cmd() -> list[str]:
 
 
 def compose(*args: str, env: dict | None = None, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run([*_compose_cmd(), "-p", PROJECT, *args], cwd=ROOT, env={**os.environ, **(env or {})},
-                          capture_output=True, text=True, check=check, timeout=900)
+    return subprocess.run(
+        [*_compose_cmd(), "-p", PROJECT, *args],
+        cwd=ROOT,
+        env={**os.environ, **(env or {})},
+        capture_output=True,
+        text=True,
+        check=check,
+        timeout=900,
+    )
 
 
 def wait_healthy(timeout: float = 90) -> None:
@@ -67,7 +74,9 @@ class DockerTests(unittest.TestCase):
             touch = compose("exec", "-T", "passkey-vault", "touch", "/app/server/x", env=env, check=False)
             self.assertNotEqual(touch.returncode, 0, "the image filesystem is read-only")
             ps = json.loads("[" + ",".join(compose("ps", "--format", "json", env=env).stdout.split("\n")[:-1]) + "]")
-            self.assertTrue(any(c.get("Health") in ("healthy", "starting") for c in ps if c["Service"] == "passkey-vault"))
+            self.assertTrue(
+                any(c.get("Health") in ("healthy", "starting") for c in ps if c["Service"] == "passkey-vault")
+            )
         finally:
             compose(*profile_args, "down", "-v", env=env, check=False)
 
@@ -75,8 +84,13 @@ class DockerTests(unittest.TestCase):
         self.run_flow({"PASSKEY_VAULT_STORAGE": ""})
 
     def test_postgres_storage(self) -> None:
-        self.run_flow({"POSTGRES_PASSWORD": "pvtest",
-                       "PASSKEY_VAULT_STORAGE": "postgresql://passkey_vault:pvtest@postgres/passkey_vault"}, "postgres")
+        self.run_flow(
+            {
+                "POSTGRES_PASSWORD": "pvtest",
+                "PASSKEY_VAULT_STORAGE": "postgresql://passkey_vault:pvtest@postgres/passkey_vault",
+            },
+            "postgres",
+        )
 
     def test_mongodb_storage(self) -> None:
         self.run_flow({"PASSKEY_VAULT_STORAGE": "mongodb://mongodb/passkey_vault"}, "mongodb")

@@ -52,8 +52,9 @@ class MongoVaultStore:
             except self._dup:
                 raise StoreConflict("vault already exists") from None
         else:
-            res = self._col.update_one({"_id": "vault", "revision": expected_revision},
-                                       {"$set": {"revision": new, "doc_json": body}})
+            res = self._col.update_one(
+                {"_id": "vault", "revision": expected_revision}, {"$set": {"revision": new, "doc_json": body}}
+            )
             if res.matched_count != 1:
                 raise StoreConflict(f"revision changed (expected {expected_revision})")
         return new
@@ -79,7 +80,6 @@ def open_mongodb(uri: str) -> tuple[MongoVaultStore, MongoAuditSink]:
     from pymongo.write_concern import WriteConcern
 
     client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
-    db = client.get_default_database(default=DEFAULT_DB).with_options(
-        write_concern=WriteConcern(w="majority", j=True))
+    db = client.get_default_database(default=DEFAULT_DB).with_options(write_concern=WriteConcern(w="majority", j=True))
     client.admin.command("ping")
     return MongoVaultStore(db, client, dup), MongoAuditSink(db, client)

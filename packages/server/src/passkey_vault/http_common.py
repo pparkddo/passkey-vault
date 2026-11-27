@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-import sys
 from http.server import BaseHTTPRequestHandler
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 from urllib.parse import parse_qs, urlsplit
 
 from .config import MAX_BODY_BYTES
@@ -16,8 +16,14 @@ from .formats import REQUEST_ID_RE, SECRET_NAME_RE
 if TYPE_CHECKING:
     from .app import App
 
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
-       "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+access_log = logging.getLogger("passkey_vault.access")
+log = logging.getLogger(__name__)
+SOCKET_TIMEOUT = 30  # seconds per socket read/write; bounds slow or idle clients (long polls wait in-process)
+
+CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
@@ -49,12 +55,13 @@ class BaseHandler(BaseHTTPRequestHandler):
     server_version = "passkey-vault"
     sys_version = ""
     protocol_version = "HTTP/1.1"
-    routes: list[Route] = []
+    routes: ClassVar[list[Route]] = []
     app: "App"
+    timeout = SOCKET_TIMEOUT
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - request line only, never bodies
+    def log_message(self, format: str, *args: Any) -> None:
         if self.app.config.access_log:
-            sys.stderr.write(f"[{self.__class__.__name__}] {self.address_string()} {format % args}\n")
+            access_log.info("%s %s %s", self.__class__.__name__, self.address_string(), format % args)
 
     # ---- responses ----
     def _unread_body(self) -> bool:
@@ -62,7 +69,10 @@ class BaseHandler(BaseHTTPRequestHandler):
         would be parsed as the next request, so such responses close the connection."""
         if getattr(self, "_body_read", False):
             return False
-        return bool(self.headers.get("Transfer-Encoding")) or self.headers.get("Content-Length", "0").strip() not in ("", "0")
+        return bool(self.headers.get("Transfer-Encoding")) or self.headers.get("Content-Length", "0").strip() not in (
+            "",
+            "0",
+        )
 
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -135,11 +145,11 @@ class BaseHandler(BaseHTTPRequestHandler):
             raise ApiError(404, "not_found", "not found")
         except ApiError as e:
             self.send_error_json(e.status, e.code, e.message)
-        except Exception as e:  # noqa: BLE001
-            self.log_message("internal error: %r", e)
+        except Exception:
+            log.exception("internal error handling %s %s", self.command, urlsplit(self.path).path)
             self.send_error_json(500, "internal_error", "internal error")
 
-    do_GET = do_POST = do_HEAD = do_PUT = do_DELETE = do_PATCH = dispatch  # type: ignore[assignment]
+    do_GET = do_POST = do_HEAD = do_PUT = do_DELETE = do_PATCH = dispatch
 
     def do_OPTIONS(self) -> None:  # never grant CORS preflights
         self.send_error_json(405, "method_not_allowed", "method not allowed")

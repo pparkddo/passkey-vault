@@ -14,4 +14,34 @@ dev = [
     "openapi-spec-validator>=0.9.0",
     "playwright>=1.65.2",
     "pyyaml>=6.0.4",
+    "ruff>=0.17.6",
+    "mypy>=2.4.1",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["packages/server/src/passkey_vault/web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF003"]  # tests use non-ASCII text on purpose
+
+[tool.ruff.lint.per-file-ignores]
+"packages/server/**" = ["UP"]  # the server targets 3.15; keep its style independent of the client's 3.10 floor
+"tests/**" = ["E501"]           # long fixture strings and assertion messages
+"test-vectors/**" = ["E501"]    # vector descriptions are long strings by nature
+
+[tool.mypy]
+python_version = "3.15"
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "passkey_vault_client.*"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["webauthn.*", "cbor2.*", "pymongo.*", "psycopg.*"]
+ignore_missing_imports = true

@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import os
-import sys
 import threading
 from http.server import ThreadingHTTPServer
 
+from .approver_api import ApproverHandler, load_static
 from .audit import AuditLog
 from .config import Config
-from .approver_api import ApproverHandler, load_static
 from .requester_api import RequesterHandler
 from .requests_queue import NonceStore, RequestQueue
 from .storage import open_storage
 from .vault import Vault
+
+log = logging.getLogger(__name__)
 
 
 class App:
@@ -56,15 +58,15 @@ class App:
         self.audit_sink.close()
 
     def announce(self) -> None:
-        cfg, log = self.config, sys.stderr
+        cfg = self.config
         backend = (cfg.storage or "file").split(":", 1)[0]
-        log.write(f"passkey-vault: rp_id={cfg.rp_id} origin={cfg.origin} storage={backend}\n")
-        log.write(f"  approver door  http://{cfg.bind}:{self.ports[0]}  (put an HTTPS reverse proxy in front)\n")
-        log.write(f"  requester door http://{cfg.bind}:{self.ports[1]}  (requesters only; never expose it)\n")
+        log.info("passkey-vault: rp_id=%s origin=%s storage=%s", cfg.rp_id, cfg.origin, backend)
+        log.info("approver door  http://%s:%d (serve it through an HTTPS reverse proxy)", cfg.bind, self.ports[0])
+        hosts = ", ".join(cfg.requester_hosts) or "loopback only"
+        log.info("requester door http://%s:%d (accepted host names: %s)", cfg.bind, self.ports[1], hosts)
         code = self.vault.ensure_setup_code()
         if code:
-            log.write(f"  no vault yet. setup code file: {cfg.setup_code_path}\n")
+            log.info("no vault yet; setup code file: %s", cfg.setup_code_path)
             if cfg.dev:
-                log.write(f"  [dev] setup code: {code}\n")
-        self.audit.write("server_started", rp_id=cfg.rp_id, origin=cfg.origin, initialized=self.vault.initialized)
-        log.flush()
+                log.info("[dev] setup code: %s", code)
+        self.audit.record("server_started", rp_id=cfg.rp_id, origin=cfg.origin, initialized=self.vault.initialized)

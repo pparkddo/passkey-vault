@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from passkey_vault.storage import StoreConflict, open_storage  # noqa: E402
 from passkey_vault.storage.mongodb import AUDIT_COLLECTION, DEFAULT_DB, STATE_COLLECTION  # noqa: E402
 from passkey_vault.storage.postgres import AUDIT_TABLE, STATE_TABLE  # noqa: E402
-from test_server import ApprovalFlowTests, ApproverApiTests  # noqa: E402,F401  (reused below)
+from test_server import ApprovalFlowTests, ApproverApiTests  # noqa: E402  (reused below)
 
 POSTGRES_URL = os.environ.get("PV_TEST_POSTGRES_URL")
 MONGODB_URL = os.environ.get("PV_TEST_MONGODB_URL")

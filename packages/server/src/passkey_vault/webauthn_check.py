@@ -33,15 +33,20 @@ def parse_wrapped(w: Any) -> dict[str, str]:
     return {"iv": w["iv"], "ct": w["ct"]}
 
 
-def verify_registration(credential: Any, expected_challenge: bytes, rp_id: str, origin: str, name: str,
-                        wrapped_master_key: Any) -> dict[str, Any]:
+def verify_registration(
+    credential: Any, expected_challenge: bytes, rp_id: str, origin: str, name: str, wrapped_master_key: Any
+) -> dict[str, Any]:
     if not isinstance(credential, dict):
         raise _bad("registration must be an object")
     wrapped = parse_wrapped(wrapped_master_key)
     try:
         v = verify_registration_response(
-            credential=credential, expected_challenge=expected_challenge, expected_rp_id=rp_id,
-            expected_origin=origin, require_user_presence=True, require_user_verification=True,
+            credential=credential,
+            expected_challenge=expected_challenge,
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            require_user_presence=True,
+            require_user_verification=True,
         )
     except (InvalidRegistrationResponse, ValueError, KeyError, TypeError) as e:
         raise _bad(f"registration verification failed: {e}") from None
@@ -56,8 +61,14 @@ def verify_registration(credential: Any, expected_challenge: bytes, rp_id: str, 
     }
 
 
-def verify_assertion(doc: dict[str, Any], assertion: Any, expected_challenge: bytes, rp_id: str, origin: str,
-                     allowed_ids: set[str] | None = None) -> tuple[dict[str, Any], Signer]:
+def verify_assertion(
+    doc: dict[str, Any],
+    assertion: Any,
+    expected_challenge: bytes,
+    rp_id: str,
+    origin: str,
+    allowed_ids: set[str] | None = None,
+) -> tuple[dict[str, Any], Signer]:
     """Verify a signature by a passkey registered in `doc`.
 
     Returns (fields for the audit log, signer). Pass the signer to the vault change so the new
@@ -70,9 +81,13 @@ def verify_assertion(doc: dict[str, Any], assertion: Any, expected_challenge: by
         raise ApiError(403, "unknown_credential", "this passkey is not registered")
     try:
         v = verify_authentication_response(
-            credential=assertion, expected_challenge=expected_challenge, expected_rp_id=rp_id,
-            expected_origin=origin, credential_public_key=b64url_decode(cred["public_key"]),
-            credential_current_sign_count=cred["sign_count"], require_user_verification=True,
+            credential=assertion,
+            expected_challenge=expected_challenge,
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=b64url_decode(cred["public_key"]),
+            credential_current_sign_count=cred["sign_count"],
+            require_user_verification=True,
         )
     except (InvalidAuthenticationResponse, ValueError, KeyError, TypeError) as e:
         raise _bad(f"assertion verification failed: {e}") from None

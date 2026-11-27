@@ -10,8 +10,7 @@ import unittest
 from pathlib import Path
 
 from cryptography.hazmat.primitives.serialization import load_der_private_key
-
-from passkey_vault_client import Client
+from passkey_vault_client import Client, PkvError
 from passkey_vault_client.client import ApprovalRequest
 from passkey_vault_client.protocol import b64url_decode, b64url_encode, oaep_label
 
@@ -32,13 +31,15 @@ class ClientVectorTests(unittest.TestCase):
             key = load_der_private_key(b64url_decode(c["private_key_pkcs8"]), None)
             req = ApprovalRequest(Client(), c["id"], "", "", "x", c["command"], b64url_decode(c["pubkey"]), key)
             self.assertEqual(req.decrypt(b64url_decode(c["ciphertext"])).decode(), c["plaintext"])
-            with self.assertRaises(Exception):
+            with self.assertRaises(PkvError):
                 req.decrypt(b64url_decode(c["ciphertext"]))  # the one-time key is gone
 
     def test_wrong_command_cannot_decrypt(self) -> None:
         c = load("rsa-oaep.json")["cases"][0]
         key = load_der_private_key(b64url_decode(c["private_key_pkcs8"]), None)
-        req = ApprovalRequest(Client(), c["id"], "", "", "x", c["must_fail_with_command"], b64url_decode(c["pubkey"]), key)
+        req = ApprovalRequest(
+            Client(), c["id"], "", "", "x", c["must_fail_with_command"], b64url_decode(c["pubkey"]), key
+        )
         with self.assertRaises(ValueError):
             req.decrypt(b64url_decode(c["ciphertext"]))
 

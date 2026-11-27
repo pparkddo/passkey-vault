@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "tests"))
 from cryptography.exceptions import InvalidTag  # noqa: E402
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
 from cryptography.hazmat.primitives.serialization import load_der_private_key  # noqa: E402
-
 from passkey_vault import formats as f  # noqa: E402
 from support import oaep, wrap_key  # noqa: E402
 
@@ -56,21 +55,41 @@ class VectorTests(unittest.TestCase):
         wk = wrap_key(bytes.fromhex(k["prf_output_hex"]))
         self.assertEqual(wk.hex(), k["wrap_key_hex"])
         cred = bytes.fromhex(k["credential_id_hex"])
-        master = AESGCM(wk).decrypt(bytes.fromhex(k["wrap_iv_hex"]), bytes.fromhex(k["wrapped_master_key_hex"]), f.wrap_aad(cred))
+        master = AESGCM(wk).decrypt(
+            bytes.fromhex(k["wrap_iv_hex"]), bytes.fromhex(k["wrapped_master_key_hex"]), f.wrap_aad(cred)
+        )
         self.assertEqual(master.hex(), k["master_key_hex"])
         it = k["item"]
-        pt = AESGCM(master).decrypt(bytes.fromhex(k["item_iv_hex"]), bytes.fromhex(k["item_ciphertext_hex"]),
-                                    f.item_aad(it["name"], it["site"], it["account"]))
+        pt = AESGCM(master).decrypt(
+            bytes.fromhex(k["item_iv_hex"]),
+            bytes.fromhex(k["item_ciphertext_hex"]),
+            f.item_aad(it["name"], it["site"], it["account"]),
+        )
         self.assertEqual(pt.decode(), k["item_plaintext"])
         with self.assertRaises(InvalidTag):
-            AESGCM(master).decrypt(bytes.fromhex(k["item_iv_hex"]), bytes.fromhex(k["item_ciphertext_hex"]),
-                                   f.item_aad(it["name"], it["site"], k["must_fail_item_with_account"]))
+            AESGCM(master).decrypt(
+                bytes.fromhex(k["item_iv_hex"]),
+                bytes.fromhex(k["item_ciphertext_hex"]),
+                f.item_aad(it["name"], it["site"], k["must_fail_item_with_account"]),
+            )
 
     def test_command_validation(self) -> None:
         self.assertIsNone(f.validate_command("ls -la"))
         self.assertIsNone(f.validate_command("echo bücher ✓"))
-        for bad in ["", "a\nb", "a\tb", "echo \u202eabc", "x\u2028y", "a\u061cb", "a\u200bb",
-                    "a\ufeffb", "a\u00adb", "\ud800", "a" * 4097, None]:
+        for bad in [
+            "",
+            "a\nb",
+            "a\tb",
+            "echo \u202eabc",
+            "x\u2028y",
+            "a\u061cb",
+            "a\u200bb",
+            "a\ufeffb",
+            "a\u00adb",
+            "\ud800",
+            "a" * 4097,
+            None,
+        ]:
             self.assertIsNotNone(f.validate_command(bad), repr(bad))
 
     def test_lp_is_unambiguous(self) -> None:

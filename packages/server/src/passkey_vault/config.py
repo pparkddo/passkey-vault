@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,7 +22,7 @@ def host_name(value: str | None) -> str:
     """Host header or host[:port] -> lower-case host name without the port ("[::1]:8741" -> "::1")."""
     h = (value or "").strip().lower()
     if h.startswith("["):
-        return h[1:h.find("]")] if "]" in h else ""
+        return h[1 : h.find("]")] if "]" in h else ""
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
@@ -33,6 +34,13 @@ def normalize_origin(origin: str) -> str:
     default = {"https": 443, "http": 80}[parts.scheme]
     port = f":{parts.port}" if parts.port and parts.port != default else ""
     return f"{parts.scheme}://{host}{port}"
+
+
+def _version() -> str:
+    try:
+        return version("passkey-vault-server")
+    except PackageNotFoundError:
+        return "0+unknown"
 
 
 @dataclass(frozen=True)
@@ -56,22 +64,36 @@ class Config:
 
 def parse_args(argv: list[str] | None = None) -> Config:
     p = argparse.ArgumentParser(prog="passkey-vault", description="passkey-vault approval server")
+    p.add_argument("--version", action="version", version=f"passkey-vault {_version()}")
     p.add_argument("--origin", help="origin the approval page is served from, e.g. https://vault.example.com")
-    p.add_argument("--data-dir", type=Path,
-                   help="directory for the setup code (and for the vault and audit log with file storage)")
-    p.add_argument("--storage", default=None,
-                   help="file (default), postgresql://... or mongodb://... ; also read from PASSKEY_VAULT_STORAGE "
-                        "so that credentials stay out of the process list")
-    p.add_argument("--requester-hosts", default=None,
-                   help="comma-separated host names (besides loopback) that requesters use to reach the requester "
-                        "door; also read from PASSKEY_VAULT_REQUESTER_HOSTS")
-    p.add_argument("--bind", default="127.0.0.1",
-                   help="address for both doors (default 127.0.0.1; use 0.0.0.0 only inside a container)")
+    p.add_argument(
+        "--data-dir", type=Path, help="directory for the setup code (and for the vault and audit log with file storage)"
+    )
+    p.add_argument(
+        "--storage",
+        default=None,
+        help="file (default), postgresql://... or mongodb://... ; also read from PASSKEY_VAULT_STORAGE "
+        "so that credentials stay out of the process list",
+    )
+    p.add_argument(
+        "--requester-hosts",
+        default=None,
+        help="comma-separated host names (besides loopback) that requesters use to reach the requester "
+        "door; also read from PASSKEY_VAULT_REQUESTER_HOSTS",
+    )
+    p.add_argument(
+        "--bind",
+        default="127.0.0.1",
+        help="address for both doors (default 127.0.0.1; use 0.0.0.0 only inside a container)",
+    )
     p.add_argument("--approver-port", type=int, default=8740)
     p.add_argument("--requester-port", type=int, default=8741)
     p.add_argument("--web-dir", type=Path, default=DEFAULT_WEB_DIR)
-    p.add_argument("--dev", action="store_true",
-                   help="development mode: origin=http://localhost:<approver-port>, data-dir=./data, print the setup code")
+    p.add_argument(
+        "--dev",
+        action="store_true",
+        help="development mode: origin=http://localhost:<approver-port>, data-dir=./data, print the setup code",
+    )
     a = p.parse_args(argv)
 
     if a.dev:
@@ -88,10 +110,18 @@ def parse_args(argv: list[str] | None = None) -> Config:
     if parts.scheme == "http" and parts.hostname != "localhost":
         p.error("an http origin is only allowed for localhost (WebAuthn needs a secure context)")
     return Config(
-        data_dir=data_dir.resolve(), rp_id=parts.hostname, origin=normalize_origin(origin),
+        data_dir=data_dir.resolve(),
+        rp_id=parts.hostname,
+        origin=normalize_origin(origin),
         storage=a.storage or os.environ.get("PASSKEY_VAULT_STORAGE") or None,
-        requester_hosts=tuple(host_name(h) for h in
-                              (a.requester_hosts or os.environ.get("PASSKEY_VAULT_REQUESTER_HOSTS") or "").split(",")
-                              if h.strip()),
-        approver_port=a.approver_port, requester_port=a.requester_port, bind=a.bind, web_dir=a.web_dir.resolve(), dev=a.dev,
+        requester_hosts=tuple(
+            host_name(h)
+            for h in (a.requester_hosts or os.environ.get("PASSKEY_VAULT_REQUESTER_HOSTS") or "").split(",")
+            if h.strip()
+        ),
+        approver_port=a.approver_port,
+        requester_port=a.requester_port,
+        bind=a.bind,
+        web_dir=a.web_dir.resolve(),
+        dev=a.dev,
     )

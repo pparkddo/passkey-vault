@@ -40,7 +40,7 @@ def _apply_signer(doc: Document, signer: Signer | None) -> bool:
         raise ApiError(403, "unknown_credential", "this passkey is not registered")
     if (count or cred["sign_count"]) and count <= cred["sign_count"]:
         raise ApiError(400, "invalid_webauthn", "signature counter did not increase; possible cloned authenticator")
-    changed = cred["sign_count"] != count
+    changed = bool(cred["sign_count"] != count)
     cred["sign_count"] = count
     return changed
 
@@ -77,10 +77,14 @@ class Vault:
             raise ApiError(409, "already_initialized", "the vault already exists")
 
     def credential(self, cred_id_b64: str) -> dict[str, Any] | None:
-        return next((c for c in self.snapshot().get("credentials", []) if c["id"] == cred_id_b64), None)
+        found: dict[str, Any] | None = next(
+            (c for c in self.snapshot().get("credentials", []) if c["id"] == cred_id_b64), None
+        )
+        return found
 
     def item(self, name: str) -> dict[str, Any] | None:
-        return self.snapshot().get("items", {}).get(name)
+        found: dict[str, Any] | None = self.snapshot().get("items", {}).get(name)
+        return found
 
     # ---- setup code: a local secret, readable only by the service account (and root) ----
     def ensure_setup_code(self) -> str | None:
@@ -90,7 +94,7 @@ class Vault:
         if self._setup_code_path.exists():
             return self._setup_code_path.read_text(encoding="ascii").strip()
         raw = "".join(secrets.choice(_SETUP_ALPHABET) for _ in range(20))
-        code = "-".join(raw[i:i + 5] for i in range(0, 20, 5))
+        code = "-".join(raw[i : i + 5] for i in range(0, 20, 5))
         atomic_write(self._setup_code_path, (code + "\n").encode("ascii"))
         return code
 
@@ -124,8 +128,13 @@ class Vault:
         raise ApiError(503, "storage_conflict", "the vault is being changed concurrently; try again")
 
     def initialize(self, credential: dict[str, Any]) -> None:
-        doc = {"format": FORMAT, "rp_id": self._rp_id, "created_at": utc_now_iso(),
-               "credentials": [credential], "items": {}}
+        doc = {
+            "format": FORMAT,
+            "rp_id": self._rp_id,
+            "created_at": utc_now_iso(),
+            "credentials": [credential],
+            "items": {},
+        }
         try:
             self._store.save(doc, 0)
         except StoreConflict:

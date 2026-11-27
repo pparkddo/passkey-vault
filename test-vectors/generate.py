@@ -23,15 +23,17 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "tests"))
 
-from support import oaep, spki_der as spki, wrap_key  # noqa: E402
-
 from passkey_vault import formats as f  # noqa: E402
+from support import oaep, wrap_key  # noqa: E402
+from support import spki_der as spki  # noqa: E402
 
 NOTE = "passkey-vault test vectors v1. Bytes are hex; keys and DER are base64url without padding. Test-only keys: never use them."
 
 
 def pkcs8(priv) -> bytes:
-    return priv.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    return priv.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
 
 
 def flip_last_byte(b: bytes) -> bytes:
@@ -49,27 +51,45 @@ def main() -> None:
     commands = [
         "gh auth login --with-token",
         "curl -u me:$SECRET https://example.com/api",
-        "login --site bücher.example \"with spaces\" ✓",
+        'login --site bücher.example "with spaces" ✓',
     ]
 
     # label
     label_cases = []
     for rid, cmd in [(ids[0], commands[0]), (ids[0], commands[2]), (ids[1], commands[1])]:
-        label_cases.append({
-            "id": rid, "command": cmd, "pubkey": f.b64url_encode(pub2048),
-            "label_hex": f.oaep_label(rid, cmd, pub2048).hex(),
-        })
-    write("label.json", {"rule": "lp('passkey-vault/oaep-label/v1') || lp(id) || lp(command) || lp(pubkey_der), lp(x)=u32be(len)||x",
-                         "cases": label_cases})
+        label_cases.append(
+            {
+                "id": rid,
+                "command": cmd,
+                "pubkey": f.b64url_encode(pub2048),
+                "label_hex": f.oaep_label(rid, cmd, pub2048).hex(),
+            }
+        )
+    write(
+        "label.json",
+        {
+            "rule": "lp('passkey-vault/oaep-label/v1') || lp(id) || lp(command) || lp(pubkey_der), lp(x)=u32be(len)||x",
+            "cases": label_cases,
+        },
+    )
 
     # approve challenge
-    write("approve-challenge.json", {
-        "rule": "SHA-256(lp('passkey-vault/approve/v1') || lp(id) || lp(secret) || lp(command) || lp(pubkey_der))",
-        "cases": [{
-            "id": c["id"], "secret": s, "command": c["command"], "pubkey": c["pubkey"],
-            "challenge_hex": f.approve_challenge(c["id"], s, c["command"], pub2048).hex(),
-        } for c, s in zip(label_cases, ["github", "example.com", "kr.site"])],
-    })
+    write(
+        "approve-challenge.json",
+        {
+            "rule": "SHA-256(lp('passkey-vault/approve/v1') || lp(id) || lp(secret) || lp(command) || lp(pubkey_der))",
+            "cases": [
+                {
+                    "id": c["id"],
+                    "secret": s,
+                    "command": c["command"],
+                    "pubkey": c["pubkey"],
+                    "challenge_hex": f.approve_challenge(c["id"], s, c["command"], pub2048).hex(),
+                }
+                for c, s in zip(label_cases, ["github", "example.com", "kr.site"], strict=True)
+            ],
+        },
+    )
 
     # op challenge
     nonce = bytes(range(16))
@@ -82,12 +102,21 @@ def main() -> None:
         c["challenge_hex"] = f.op_challenge(c["op"], nonce, *c["fields"]).hex()
     # add-credential takes bytes (the credential id) as its field
     cred_new = bytes.fromhex("a1" * 20)
-    op_cases.append({"op": "add-credential", "nonce_hex": nonce.hex(), "fields_hex": [cred_new.hex()],
-                     "challenge_hex": f.op_challenge("add-credential", nonce, cred_new).hex()})
-    write("op-challenge.json", {
-        "rule": "SHA-256(lp('passkey-vault/op/v1') || lp(op) || lp(nonce) || lp(field1) || ...). fields are UTF-8 strings, fields_hex are bytes",
-        "cases": op_cases,
-    })
+    op_cases.append(
+        {
+            "op": "add-credential",
+            "nonce_hex": nonce.hex(),
+            "fields_hex": [cred_new.hex()],
+            "challenge_hex": f.op_challenge("add-credential", nonce, cred_new).hex(),
+        }
+    )
+    write(
+        "op-challenge.json",
+        {
+            "rule": "SHA-256(lp('passkey-vault/op/v1') || lp(op) || lp(nonce) || lp(field1) || ...). fields are UTF-8 strings, fields_hex are bytes",
+            "cases": op_cases,
+        },
+    )
 
     # RSA-OAEP
     rsa_cases = []
@@ -101,17 +130,27 @@ def main() -> None:
         pub_der = spki(priv.public_key())
         label = f.oaep_label(rid, cmd, pub_der)
         ct = priv.public_key().encrypt(plaintext.encode("utf-8"), oaep(label))
-        rsa_cases.append({
-            "bits": bits, "id": rid, "command": cmd,
-            "pubkey": f.b64url_encode(pub_der), "private_key_pkcs8": f.b64url_encode(pkcs8(priv)),
-            "label_hex": label.hex(), "ciphertext": f.b64url_encode(ct), "plaintext": plaintext,
-            "must_fail_with_label_hex": flip_last_byte(label).hex(),
-            "must_fail_with_command": cmd + " ",
-        })
-    write("rsa-oaep.json", {
-        "rule": "RSA-OAEP, hash SHA-256, MGF1 SHA-256, label as in label.json. Randomized, so vectors are fixed ciphertext -> expected plaintext. Decrypting with must_fail_* must fail",
-        "cases": rsa_cases,
-    })
+        rsa_cases.append(
+            {
+                "bits": bits,
+                "id": rid,
+                "command": cmd,
+                "pubkey": f.b64url_encode(pub_der),
+                "private_key_pkcs8": f.b64url_encode(pkcs8(priv)),
+                "label_hex": label.hex(),
+                "ciphertext": f.b64url_encode(ct),
+                "plaintext": plaintext,
+                "must_fail_with_label_hex": flip_last_byte(label).hex(),
+                "must_fail_with_command": cmd + " ",
+            }
+        )
+    write(
+        "rsa-oaep.json",
+        {
+            "rule": "RSA-OAEP, hash SHA-256, MGF1 SHA-256, label as in label.json. Randomized, so vectors are fixed ciphertext -> expected plaintext. Decrypting with must_fail_* must fail",
+            "cases": rsa_cases,
+        },
+    )
 
     # HKDF, master key wrapping, item encryption
     prf_out = bytes(range(32))
@@ -124,25 +163,28 @@ def main() -> None:
     item_iv = bytes(range(50, 62))
     secret = "hunter2 ✓ geheim"
     item_ct = AESGCM(master).encrypt(item_iv, secret.encode("utf-8"), f.item_aad(**item))
-    write("keys.json", {
-        "rule": "PRF input = SHA-256('passkey-vault/prf-salt/v1'); wrap key = HKDF-SHA256(ikm=PRF output, salt='passkey-vault/hkdf-salt/v1', info='passkey-vault/wrap-key/v1', L=32); "
-                "wrap = AES-256-GCM(wrap key, iv, master key, AAD=lp('passkey-vault/wrap/v1')||lp(credential_id)); "
-                "item = AES-256-GCM(master key, iv, UTF-8 secret, AAD=lp('passkey-vault/item/v1')||lp(name)||lp(site)||lp(account)). Ciphertext hex includes the 16-byte tag",
-        "prf_salt_hex": f.PRF_SALT.hex(),
-        "prf_output_hex": prf_out.hex(),
-        "wrap_key_hex": wk.hex(),
-        "master_key_hex": master.hex(),
-        "credential_id_hex": cred_id.hex(),
-        "wrap_aad_hex": f.wrap_aad(cred_id).hex(),
-        "wrap_iv_hex": wrap_iv.hex(),
-        "wrapped_master_key_hex": wrapped.hex(),
-        "item": item,
-        "item_aad_hex": f.item_aad(**item).hex(),
-        "item_iv_hex": item_iv.hex(),
-        "item_plaintext": secret,
-        "item_ciphertext_hex": item_ct.hex(),
-        "must_fail_item_with_account": "me@example.org",
-    })
+    write(
+        "keys.json",
+        {
+            "rule": "PRF input = SHA-256('passkey-vault/prf-salt/v1'); wrap key = HKDF-SHA256(ikm=PRF output, salt='passkey-vault/hkdf-salt/v1', info='passkey-vault/wrap-key/v1', L=32); "
+            "wrap = AES-256-GCM(wrap key, iv, master key, AAD=lp('passkey-vault/wrap/v1')||lp(credential_id)); "
+            "item = AES-256-GCM(master key, iv, UTF-8 secret, AAD=lp('passkey-vault/item/v1')||lp(name)||lp(site)||lp(account)). Ciphertext hex includes the 16-byte tag",
+            "prf_salt_hex": f.PRF_SALT.hex(),
+            "prf_output_hex": prf_out.hex(),
+            "wrap_key_hex": wk.hex(),
+            "master_key_hex": master.hex(),
+            "credential_id_hex": cred_id.hex(),
+            "wrap_aad_hex": f.wrap_aad(cred_id).hex(),
+            "wrap_iv_hex": wrap_iv.hex(),
+            "wrapped_master_key_hex": wrapped.hex(),
+            "item": item,
+            "item_aad_hex": f.item_aad(**item).hex(),
+            "item_iv_hex": item_iv.hex(),
+            "item_plaintext": secret,
+            "item_ciphertext_hex": item_ct.hex(),
+            "must_fail_item_with_account": "me@example.org",
+        },
+    )
     print("wrote test-vectors/*.json")
 
 

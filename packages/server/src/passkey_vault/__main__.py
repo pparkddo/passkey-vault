@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import threading
@@ -12,6 +13,7 @@ from .config import parse_args
 
 def main() -> None:
     os.umask(0o077)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = App(parse_args())
     app.start()
     app.announce()

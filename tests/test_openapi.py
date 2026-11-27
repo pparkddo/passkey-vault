@@ -21,7 +21,9 @@ from passkey_vault.http_common import BaseHandler  # noqa: E402
 from passkey_vault.requester_api import RequesterHandler  # noqa: E402
 from test_server import ServerTestBase, raw_request  # noqa: E402
 
-SPECS = {name: yaml.safe_load((ROOT / "docs/openapi" / f"{name}.yaml").read_text()) for name in ("requester", "approver")}
+SPECS = {
+    name: yaml.safe_load((ROOT / "docs/openapi" / f"{name}.yaml").read_text()) for name in ("requester", "approver")
+}
 
 
 def spec_paths(spec: dict) -> list[tuple[str, str, re.Pattern[str]]]:
@@ -88,8 +90,13 @@ class ResponsesMatchSpec(ServerTestBase):
         self.approver.deny(denied.id)
         denied.poll(0)
         raw_request(self.requester_port, "POST", "/requests", b"{}", {"Content-Type": "text/plain"})  # 415
-        raw_request(self.requester_port, "POST", "/requests", json.dumps({"secret": "nope", "command": "x", "pubkey": "AA"}).encode(),
-                    {"Content-Type": "application/json"})
+        raw_request(
+            self.requester_port,
+            "POST",
+            "/requests",
+            json.dumps({"secret": "nope", "command": "x", "pubkey": "AA"}).encode(),
+            {"Content-Type": "application/json"},
+        )
         self.approver.add_credential("second")
         self.approver.delete_credential(self.approver.creds[1], by=self.approver.creds[0])
         self.approver.delete_item("github")

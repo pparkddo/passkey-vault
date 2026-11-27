@@ -135,7 +135,7 @@ from passkey_vault_client import Client
 
 request = Client().request("github", "deploy --env production")
 print("Approve at", request.approve_url)
-secret = request.wait()   # bytes, for exactly this command
+secret = request.wait()  # bytes, for exactly this command
 ```
 
 Any language works: follow the [requester interface](docs/interface.md) and check your implementation
@@ -187,6 +187,8 @@ Requires [uv](https://docs.astral.sh/uv/) and Node.js 24.
 ```sh
 uv sync                                                  # both packages, editable, plus dev tools
 uv run passkey-vault --dev                               # http://localhost:8740, setup code printed
+uv run ruff check . && uv run ruff format --check .      # lint and format
+uv run mypy packages/client/src packages/server/src      # types (the client is strict)
 uv run python -m unittest discover -s tests              # Python tests
 node --test 'tests/js/*.test.mjs'                        # approval page crypto, in Node
 uv run python tests/e2e_virtual_authenticator.py         # end to end in Chromium

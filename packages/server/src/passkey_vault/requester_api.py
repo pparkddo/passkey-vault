@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import ClassVar
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import load_der_public_key
@@ -10,7 +11,7 @@ from cryptography.hazmat.primitives.serialization import load_der_public_key
 from .config import MAX_WAIT_SECONDS, host_name
 from .errors import ApiError
 from .formats import MAX_RSA_BITS, MIN_RSA_BITS, b64url_decode, validate_command
-from .http_common import BaseHandler, require_request_id, require_secret_name
+from .http_common import BaseHandler, Route, require_request_id, require_secret_name
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
@@ -48,16 +49,20 @@ class RequesterHandler(BaseHandler):
         problem = validate_command(command)
         if problem:
             raise ApiError(400, "invalid_command", problem)
+        assert isinstance(command, str)  # validate_command accepted it
         pubkey_der, key_bytes = parse_requester_pubkey(body.get("pubkey"))
         doc = self.app.vault.require_initialized()
         if secret not in doc["items"]:
             raise ApiError(404, "unknown_secret", "no vault item with that name")
         req = self.app.queue.create(secret, command, pubkey_der, key_bytes)
-        self.send_json(201, {
-            "id": req.id,
-            "approve_url": f"{self.app.config.origin}/approve?id={req.id}",
-            "expires_at": req.expires_at,
-        })
+        self.send_json(
+            201,
+            {
+                "id": req.id,
+                "approve_url": f"{self.app.config.origin}/approve?id={req.id}",
+                "expires_at": req.expires_at,
+            },
+        )
 
     def route_collect(self, req_id: str) -> None:
         raw = self.query().get("wait", ["0"])
@@ -67,7 +72,7 @@ class RequesterHandler(BaseHandler):
             self.send_json(200, result)
             self.wfile.flush()
 
-    routes = [
+    routes: ClassVar[list[Route]] = [
         ("POST", re.compile(r"/requests"), route_create_request),
         ("GET", re.compile(r"/requests/([^/]+)"), route_collect),
     ]

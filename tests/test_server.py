@@ -17,21 +17,21 @@ sys.path.insert(0, str(ROOT / "tests"))
 from cryptography.exceptions import InvalidTag  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import ec, rsa  # noqa: E402
-
 from passkey_vault import formats as f  # noqa: E402
 from passkey_vault.app import App  # noqa: E402
 from passkey_vault.config import Config  # noqa: E402
 from passkey_vault.requests_queue import RequestQueue  # noqa: E402
 from passkey_vault_client import ApprovalRequest, Client, PkvError  # noqa: E402
-from soft_approver import SoftAuthenticator, SoftApprover  # noqa: E402
+from soft_approver import SoftApprover, SoftAuthenticator  # noqa: E402
 
 ORIGIN = "http://localhost:8740"
 SECRET = "correct horse battery staple ✓"
 DUMMY_WRAPPED = {"iv": f.b64url_encode(bytes(12)), "ct": f.b64url_encode(bytes(48))}
 
 
-def raw_request(port: int, method: str, path: str, body: bytes | None = None,
-                headers: dict | None = None) -> tuple[int, dict, dict]:
+def raw_request(
+    port: int, method: str, path: str, body: bytes | None = None, headers: dict | None = None
+) -> tuple[int, dict, dict]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     conn.request(method, path, body=body, headers=headers or {})
     r = conn.getresponse()
@@ -45,8 +45,16 @@ def raw_request(port: int, method: str, path: str, body: bytes | None = None,
 
 
 def make_config(data_dir: Path, storage: str | None = None, origin: str = ORIGIN, approver_port: int = 0) -> Config:
-    return Config(data_dir=data_dir, rp_id="localhost", origin=origin, storage=storage,
-                  approver_port=approver_port, requester_port=0, dev=True, access_log=False)
+    return Config(
+        data_dir=data_dir,
+        rp_id="localhost",
+        origin=origin,
+        storage=storage,
+        approver_port=approver_port,
+        requester_port=0,
+        dev=True,
+        access_log=False,
+    )
 
 
 class ServerTestBase(unittest.TestCase):
@@ -74,8 +82,9 @@ class ServerTestBase(unittest.TestCase):
         st, body = self.approver.put_item("github", "github.com", "me@example.com", SECRET)
         self.assertEqual(st, 200, body)
 
-    def new_request(self, command: str = "printenv PASSKEY_VAULT_SECRET", secret: str = "github",
-                    bits: int = 2048) -> ApprovalRequest:
+    def new_request(
+        self, command: str = "printenv PASSKEY_VAULT_SECRET", secret: str = "github", bits: int = 2048
+    ) -> ApprovalRequest:
         return Client(self.requester_url).request(secret, command, key_bits=bits)
 
     def fake_clock(self, start: float = 1000.0) -> list[float]:
@@ -87,9 +96,11 @@ class ServerTestBase(unittest.TestCase):
     def approve_raw(self, req: ApprovalRequest, cred, ciphertext: bytes) -> tuple[int, dict]:
         """Sign the real challenge with `cred` but upload an arbitrary ciphertext."""
         challenge = f.approve_challenge(req.id, req.secret, req.command, req.pubkey_der)
-        return self.approver.call("POST", f"/api/requests/{req.id}/approve",
-                                  {"assertion": self.approver.auth.get(cred, challenge),
-                                   "ciphertext": f.b64url_encode(ciphertext)})
+        return self.approver.call(
+            "POST",
+            f"/api/requests/{req.id}/approve",
+            {"assertion": self.approver.auth.get(cred, challenge), "ciphertext": f.b64url_encode(ciphertext)},
+        )
 
 
 class SetupTests(ServerTestBase):
@@ -103,13 +114,23 @@ class SetupTests(ServerTestBase):
         self.assertEqual(self.approver.call("POST", "/api/nonce", {"op": "setup"})[0], 409)
 
     def test_setup_rejects_wrong_origin_and_missing_uv(self) -> None:
-        for auth, origin in ((SoftAuthenticator("localhost", ORIGIN), "http://evil.localhost"),
-                             (SoftAuthenticator("localhost", ORIGIN, uv=False), None)):
+        for auth, origin in (
+            (SoftAuthenticator("localhost", ORIGIN), "http://evil.localhost"),
+            (SoftAuthenticator("localhost", ORIGIN, uv=False), None),
+        ):
             nonce = self.approver.nonce("setup")
             _, reg = auth.create(f.op_challenge("register", nonce, "x"), origin=origin)
-            st, body = self.approver.call("POST", "/api/setup", {
-                "setup_code": self.setup_code, "nonce": f.b64url_encode(nonce), "name": "x",
-                "registration": reg, "wrapped_master_key": DUMMY_WRAPPED})
+            st, body = self.approver.call(
+                "POST",
+                "/api/setup",
+                {
+                    "setup_code": self.setup_code,
+                    "nonce": f.b64url_encode(nonce),
+                    "name": "x",
+                    "registration": reg,
+                    "wrapped_master_key": DUMMY_WRAPPED,
+                },
+            )
             self.assertEqual((st, body["error"]), (400, "invalid_webauthn"))
         self.assertFalse(self.app.vault.initialized)
 
@@ -127,7 +148,7 @@ class ApprovalFlowTests(ServerTestBase):
     def test_full_flow_and_single_delivery(self) -> None:
         req = self.new_request()
         self.assertTrue(req.approve_url.startswith(f"{ORIGIN}/approve?id="))
-        self.assertEqual(req.poll(wait=0), {"status": "pending"})
+        self.assertEqual(req.poll(wait=0).status, "pending")
         st, body = self.approver.approve(req.id)
         self.assertEqual(st, 200, body)
         st, body, _ = raw_request(self.requester_port, "GET", f"/requests/{req.id}")
@@ -146,10 +167,10 @@ class ApprovalFlowTests(ServerTestBase):
     def test_wrong_label_cannot_decrypt(self) -> None:
         req = self.new_request(command="echo one")
         self.approver.approve(req.id)
-        body = req.poll(0)
+        result = req.poll(0)
         req.command = "echo two"  # using the secret for another command changes the label
         with self.assertRaises(ValueError):
-            req.decrypt(f.b64url_decode(body["ciphertext"]))
+            req.decrypt(result.ciphertext)
 
     def test_approval_bound_to_request_contents(self) -> None:
         req = self.new_request(command="echo safe")
@@ -158,14 +179,19 @@ class ApprovalFlowTests(ServerTestBase):
         other = self.new_request()
         st, body = self.approver.approve(req.id, approve_with={"id": other.id})
         self.assertEqual((st, body["error"]), (400, "invalid_webauthn"), "a signature over another request")
-        self.assertEqual(req.poll(0)["status"], "pending")
+        self.assertEqual(req.poll(0).status, "pending")
 
     def test_replayed_assertion_rejected(self) -> None:
         req = self.new_request()
-        assertion = self.approver.auth.get(self.approver.creds[0], f.approve_challenge(req.id, "github", req.command, req.pubkey_der))
+        assertion = self.approver.auth.get(
+            self.approver.creds[0], f.approve_challenge(req.id, "github", req.command, req.pubkey_der)
+        )
         req2 = self.new_request()
-        st, _ = self.approver.call("POST", f"/api/requests/{req2.id}/approve",
-                                {"assertion": assertion, "ciphertext": f.b64url_encode(bytes(256))})
+        st, _ = self.approver.call(
+            "POST",
+            f"/api/requests/{req2.id}/approve",
+            {"assertion": assertion, "ciphertext": f.b64url_encode(bytes(256))},
+        )
         self.assertEqual(st, 400)
 
     def test_unknown_credential_rejected(self) -> None:
@@ -181,7 +207,7 @@ class ApprovalFlowTests(ServerTestBase):
     def test_deny_is_final(self) -> None:
         req = self.new_request()
         self.assertEqual(self.approver.deny(req.id)[0], 200)
-        self.assertEqual(req.poll(0), {"status": "denied"})
+        self.assertEqual(req.poll(0).status, "denied")
         self.assertEqual(self.approver.deny(req.id)[0], 409, "cannot deny twice")
         st, body = self.approve_raw(req, self.approver.creds[0], bytes(256))
         self.assertEqual((st, body["error"]), (409, "not_pending"), "cannot approve after deny")
@@ -190,7 +216,7 @@ class ApprovalFlowTests(ServerTestBase):
         now = self.fake_clock()
         req = self.new_request()
         now[0] += 301
-        self.assertEqual(req.poll(0), {"status": "expired"})
+        self.assertEqual(req.poll(0).status, "expired")
         self.assertEqual(self.approver.deny(req.id)[0], 409)
 
     def test_approved_but_uncollected_expires(self) -> None:
@@ -198,7 +224,7 @@ class ApprovalFlowTests(ServerTestBase):
         req = self.new_request()
         self.assertEqual(self.approver.approve(req.id)[0], 200)
         now[0] += 301
-        self.assertEqual(req.poll(0), {"status": "expired"})
+        self.assertEqual(req.poll(0).status, "expired")
 
     def test_failed_audit_blocks_approval(self) -> None:
         req = self.new_request()
@@ -215,19 +241,19 @@ class ApprovalFlowTests(ServerTestBase):
             self.assertEqual(self.approver.approve(req.id)[0], 500)
         finally:
             sink.append = original
-        self.assertEqual(req.poll(0), {"status": "pending"}, "an approval that cannot be audited does not happen")
+        self.assertEqual(req.poll(0).status, "pending", "an approval that cannot be audited does not happen")
         self.assertEqual(self.approver.approve(req.id)[0], 200)
 
     def test_failed_send_keeps_ciphertext_for_retry(self) -> None:
         req = self.new_request()
         self.approver.approve(req.id)
-        with self.assertRaises(BrokenPipeError):
-            with self.app.queue.deliver(req.id, 0) as first:  # e.g. the requester disconnected
-                self.assertEqual(first["status"], "approved")
-                with self.app.queue.deliver(req.id, 0) as concurrent:
-                    self.assertEqual(concurrent, {"status": "pending"}, "a concurrent poll waits")
-                raise BrokenPipeError
-        self.assertEqual(req.decrypt(f.b64url_decode(req.poll(0)["ciphertext"])).decode(), SECRET)
+        # A failed send (e.g. the requester disconnected) must leave the ciphertext collectable.
+        with self.assertRaises(BrokenPipeError), self.app.queue.deliver(req.id, 0) as first:
+            self.assertEqual(first["status"], "approved")
+            with self.app.queue.deliver(req.id, 0) as concurrent:
+                self.assertEqual(concurrent, {"status": "pending"}, "a concurrent poll waits")
+            raise BrokenPipeError
+        self.assertEqual(req.decrypt(req.poll(0).ciphertext).decode(), SECRET)
         self.assertEqual(raw_request(self.requester_port, "GET", f"/requests/{req.id}")[0], 410)
 
     def test_approval_with_zero_counter_writes_nothing(self) -> None:
@@ -270,12 +296,14 @@ class RequesterApiValidationTests(ServerTestBase):
         super().setUp()
         self.init_vault()
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        self.pub = f.b64url_encode(key.public_key().public_bytes(serialization.Encoding.DER,
-                                                                 serialization.PublicFormat.SubjectPublicKeyInfo))
+        self.pub = f.b64url_encode(
+            key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        )
 
     def post(self, body: dict) -> tuple[int, dict]:
-        return raw_request(self.requester_port, "POST", "/requests", json.dumps(body).encode(),
-                           {"Content-Type": "application/json"})[:2]
+        return raw_request(
+            self.requester_port, "POST", "/requests", json.dumps(body).encode(), {"Content-Type": "application/json"}
+        )[:2]
 
     def test_errors(self) -> None:
         ok = {"secret": "github", "command": "ls", "pubkey": self.pub}
@@ -302,7 +330,9 @@ class RequesterApiValidationTests(ServerTestBase):
     def test_host_content_type_and_limits(self) -> None:
         body = json.dumps({"secret": "github", "command": "ls", "pubkey": self.pub}).encode()
         json_ct = {"Content-Type": "application/json"}
-        st, resp, _ = raw_request(self.requester_port, "POST", "/requests", body, {**json_ct, "Host": "evil.example:80"})
+        st, resp, _ = raw_request(
+            self.requester_port, "POST", "/requests", body, {**json_ct, "Host": "evil.example:80"}
+        )
         self.assertEqual((st, resp["error"]), (421, "bad_host"))
         st, resp, _ = raw_request(self.requester_port, "POST", "/requests", body, {"Content-Type": "text/plain"})
         self.assertEqual((st, resp["error"]), (415, "unsupported_media_type"))
@@ -340,19 +370,30 @@ class ApproverApiTests(ServerTestBase):
     def test_post_requires_origin(self) -> None:
         st, body = self.approver.call("POST", "/api/nonce", {"op": "put-item"}, origin=None)
         self.assertEqual((st, body["error"]), (403, "bad_origin"))
-        self.assertEqual(self.approver.call("POST", "/api/nonce", {"op": "put-item"}, origin="https://evil.example")[0], 403)
+        self.assertEqual(
+            self.approver.call("POST", "/api/nonce", {"op": "put-item"}, origin="https://evil.example")[0], 403
+        )
 
     def test_put_item_needs_valid_assertion_and_nonce(self) -> None:
         st, body = self.approver.put_item("github", "github.com", "me", "x", tamper={"site": "evil.com"})
         self.assertEqual((st, body["error"]), (400, "invalid_webauthn"), "signed fields differ from sent fields")
         nonce = self.approver.nonce("put-item")
         a = self.approver.auth.get(self.approver.creds[0], f.op_challenge("put-item", nonce, "n", "s", "a"))
-        body = {"nonce": f.b64url_encode(nonce), "name": "n", "site": "s", "account": "a",
-                "iv": f.b64url_encode(bytes(12)), "ct": f.b64url_encode(bytes(32)), "assertion": a}
+        body = {
+            "nonce": f.b64url_encode(nonce),
+            "name": "n",
+            "site": "s",
+            "account": "a",
+            "iv": f.b64url_encode(bytes(12)),
+            "ct": f.b64url_encode(bytes(32)),
+            "assertion": a,
+        }
         self.assertEqual(self.approver.call("POST", "/api/items", body)[0], 200)
         self.assertEqual(self.approver.call("POST", "/api/items", body)[1]["error"], "invalid_nonce", "nonce reuse")
         body["nonce"] = f.b64url_encode(self.approver.nonce("delete-item"))
-        self.assertEqual(self.approver.call("POST", "/api/items", body)[1]["error"], "invalid_nonce", "nonce of another op")
+        self.assertEqual(
+            self.approver.call("POST", "/api/items", body)[1]["error"], "invalid_nonce", "nonce of another op"
+        )
 
     def test_item_tamper_detected_by_approver(self) -> None:
         # Changing the displayed account in storage must make decryption in the approver fail.
@@ -380,9 +421,17 @@ class ApproverApiTests(ServerTestBase):
         nonce = self.approver.nonce("add-credential")
         new, reg = self.approver.auth.create(f.op_challenge("register", nonce, "evil"))
         a = self.approver.auth.get(new, f.op_challenge("add-credential", nonce, new.id, "evil"))  # self-signed
-        st, body = self.approver.call("POST", "/api/credentials", {
-            "nonce": f.b64url_encode(nonce), "name": "evil", "registration": reg,
-            "wrapped_master_key": DUMMY_WRAPPED, "assertion": a})
+        st, body = self.approver.call(
+            "POST",
+            "/api/credentials",
+            {
+                "nonce": f.b64url_encode(nonce),
+                "name": "evil",
+                "registration": reg,
+                "wrapped_master_key": DUMMY_WRAPPED,
+                "assertion": a,
+            },
+        )
         self.assertEqual((st, body["error"]), (403, "unknown_credential"))
         self.assertEqual(len(self.approver.state()["credentials"]), 1)
 
@@ -411,8 +460,12 @@ class ApproverApiTests(ServerTestBase):
         # Regression: a POST whose body is not read must not corrupt the next request on the connection.
         req = self.new_request()
         conn = http.client.HTTPConnection("127.0.0.1", self.approver_port, timeout=10)
-        conn.request("POST", f"/api/requests/{req.id}/deny", body=b"{}",
-                     headers={"Content-Type": "application/json", "Origin": ORIGIN})
+        conn.request(
+            "POST",
+            f"/api/requests/{req.id}/deny",
+            body=b"{}",
+            headers={"Content-Type": "application/json", "Origin": ORIGIN},
+        )
         r = conn.getresponse()
         r.read()
         self.assertEqual(r.status, 200)
@@ -440,8 +493,16 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(normalize_origin("https://Vault.Example.com:443/"), "https://vault.example.com")
         self.assertEqual(normalize_origin("https://vault.example.com:8443"), "https://vault.example.com:8443")
-        cfg = parse_args(["--origin", "HTTPS://Vault.example.com:443", "--data-dir", "/tmp/x",
-                          "--requester-hosts", "Vault.internal:8741, other"])
+        cfg = parse_args(
+            [
+                "--origin",
+                "HTTPS://Vault.example.com:443",
+                "--data-dir",
+                "/tmp/x",
+                "--requester-hosts",
+                "Vault.internal:8741, other",
+            ]
+        )
         self.assertEqual((cfg.origin, cfg.rp_id), ("https://vault.example.com", "vault.example.com"))
         self.assertEqual(cfg.requester_hosts, ("vault.internal", "other"))
 
@@ -466,8 +527,13 @@ class PersistenceTests(ServerTestBase):
 
     def test_rp_id_mismatch_refuses_start(self) -> None:
         self.init_vault()
-        cfg = Config(data_dir=self.app.config.data_dir, rp_id="other.example", origin="https://other.example",
-                     approver_port=0, requester_port=0)
+        cfg = Config(
+            data_dir=self.app.config.data_dir,
+            rp_id="other.example",
+            origin="https://other.example",
+            approver_port=0,
+            requester_port=0,
+        )
         with self.assertRaises(RuntimeError):
             App(cfg)
 

@@ -22,7 +22,7 @@ pkv run [options] SECRET -c 'SHELL COMMAND'
 | Form | What runs | What the approver sees |
 |---|---|---|
 | `-- COMMAND [ARG...]` | the program directly, no shell | the arguments, shell-quoted (`shlex.join`) |
-| `-c 'SHELL COMMAND'` | `/bin/sh -c 'SHELL COMMAND'` | the string exactly as given |
+| `-c 'SHELL COMMAND'` | `/bin/sh -c` (`cmd /c` on Windows) | the string exactly as given |
 
 Use `--` when you can; use `-c` when you need pipes, redirection or here-strings.
 
@@ -38,6 +38,12 @@ Everything after the first `--` belongs to the command, so options for `pkv` go 
 
 `pkv` prints its progress, including the approval link, on stderr. The command's own stdout and stderr
 pass through untouched.
+
+With the secret in an environment variable, `pkv` replaces itself with the command (`exec`), so signals,
+the exit status and the process ID are the command's own. With `--stdin` (and on Windows), the command
+runs as a child; `pkv` forwards `SIGTERM` and `SIGHUP` to it and exits with its status.
+
+Requests to a loopback server never go through `HTTP_PROXY`/`HTTPS_PROXY` from the environment.
 
 ### Exit codes
 
@@ -71,7 +77,7 @@ request = client.request("github", "gh auth login --with-token")
 print("Approve at", request.approve_url)
 
 try:
-    secret = request.wait(timeout=330)   # bytes
+    secret = request.wait(timeout=330)  # bytes
 except (RequestDenied, RequestExpired):
     ...
 ```
@@ -81,7 +87,7 @@ except (RequestDenied, RequestExpired):
 | `Client(base_url, http_timeout=10)` | connection to the requester endpoint |
 | `Client.request(secret, command, key_bits=3072)` | create a request; returns an `ApprovalRequest` |
 | `ApprovalRequest.approve_url`, `.expires_at`, `.id` | what to show the approver |
-| `ApprovalRequest.poll(wait=30)` | one long poll; returns the raw status object |
+| `ApprovalRequest.poll(wait=30)` | one long poll; returns a `PollResult(status, ciphertext)` |
 | `ApprovalRequest.wait(timeout=330)` | block until decided; returns the secret as bytes |
 | `PkvError` | base class; `ServerError` (with `.status` and `.code`), `RequestDenied`, `RequestExpired`, `RequestTimeout` |
 

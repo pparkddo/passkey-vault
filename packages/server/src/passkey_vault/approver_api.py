@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlsplit
 
 from .errors import ApiError
 from .formats import approve_challenge, b64url_decode, b64url_encode, op_challenge, validate_meta
-from .http_common import BaseHandler, require_request_id, require_secret_name
+from .http_common import BaseHandler, Route, require_request_id, require_secret_name
 from .requests_queue import Request
 from .vault import Signer
 from .webauthn_check import verify_assertion, verify_registration
@@ -26,8 +26,13 @@ NONCE_OPS = {"setup", "add-credential", "put-item", "delete-item", "delete-crede
 MIN_ITEM_CT, MAX_ITEM_CT = 17, 1024 + 16  # at least 1 byte of secret plus the 16-byte GCM tag
 MAX_LABEL = 64
 CONTENT_TYPES = {
-    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-    ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json",
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+    ".webmanifest": "application/manifest+json",
 }
 
 
@@ -55,7 +60,7 @@ def _passkey_name(value: Any) -> str:
     problem = validate_meta(value, "name")
     if problem or not value.strip() or len(value) > MAX_LABEL:
         raise ApiError(400, "bad_request", problem or f"name must be 1-{MAX_LABEL} characters")
-    return value
+    return str(value)
 
 
 class ApproverHandler(BaseHandler):
@@ -71,15 +76,22 @@ class ApproverHandler(BaseHandler):
             raise ApiError(400, "invalid_nonce", "nonce is unknown or expired; start again")
         return nonce
 
-    def _assert(self, doc: dict[str, Any], body: dict[str, Any], challenge: bytes,
-                allowed: set[str] | None = None) -> tuple[dict[str, Any], Signer]:
+    def _assert(
+        self, doc: dict[str, Any], body: dict[str, Any], challenge: bytes, allowed: set[str] | None = None
+    ) -> tuple[dict[str, Any], Signer]:
         cfg = self.app.config
         return verify_assertion(doc, body.get("assertion"), challenge, cfg.rp_id, cfg.origin, allowed)
 
     def _register(self, body: dict[str, Any], nonce: bytes, name: str) -> dict[str, Any]:
         cfg = self.app.config
-        return verify_registration(body.get("registration"), op_challenge("register", nonce, name),
-                                   cfg.rp_id, cfg.origin, name, body.get("wrapped_master_key"))
+        return verify_registration(
+            body.get("registration"),
+            op_challenge("register", nonce, name),
+            cfg.rp_id,
+            cfg.origin,
+            name,
+            body.get("wrapped_master_key"),
+        )
 
     def _request(self, req_id: str) -> Request:
         return self.app.queue.get(require_request_id(req_id))
@@ -94,16 +106,25 @@ class ApproverHandler(BaseHandler):
     # ---------- reads ----------
     def route_state(self) -> None:
         doc = self.app.vault.snapshot()
-        self.send_json(200, {
-            "initialized": bool(doc),
-            "rp_id": self.app.config.rp_id,
-            "credentials": [{k: c[k] for k in ("id", "name", "created_at", "wrapped_master_key")}
-                            for c in doc.get("credentials", [])],
-            "items": [{"name": n, "site": it["site"], "account": it["account"], "updated_at": it["updated_at"]}
-                      for n, it in sorted(doc.get("items", {}).items())],
-            "pending": [{k: v[k] for k in ("id", "secret", "command", "expires_at", "expires_in")}
-                        for v in self.app.queue.pending_views()],
-        })
+        self.send_json(
+            200,
+            {
+                "initialized": bool(doc),
+                "rp_id": self.app.config.rp_id,
+                "credentials": [
+                    {k: c[k] for k in ("id", "name", "created_at", "wrapped_master_key")}
+                    for c in doc.get("credentials", [])
+                ],
+                "items": [
+                    {"name": n, "site": it["site"], "account": it["account"], "updated_at": it["updated_at"]}
+                    for n, it in sorted(doc.get("items", {}).items())
+                ],
+                "pending": [
+                    {k: v[k] for k in ("id", "secret", "command", "expires_at", "expires_in")}
+                    for v in self.app.queue.pending_views()
+                ],
+            },
+        )
 
     def route_nonce(self) -> None:
         op = self.read_object().get("op")
@@ -119,9 +140,17 @@ class ApproverHandler(BaseHandler):
         req = self._request(req_id)
         view = self.app.queue.view(req)
         item = self.app.vault.item(req.secret)
-        view["item"] = None if item is None else {
-            "name": req.secret, "site": item["site"], "account": item["account"], "iv": item["iv"], "ct": item["ct"],
-        }
+        view["item"] = (
+            None
+            if item is None
+            else {
+                "name": req.secret,
+                "site": item["site"],
+                "account": item["account"],
+                "iv": item["iv"],
+                "ct": item["ct"],
+            }
+        )
         self.send_json(200, view)
 
     # ---------- approve / deny ----------
@@ -157,7 +186,9 @@ class ApproverHandler(BaseHandler):
         name = _passkey_name(body.get("name"))
         cred = self._register(body, nonce, name)
         vault.initialize(cred)
-        self.app.audit.record("vault_initialized", credential_id=cred["id"], credential_name=name, aaguid=cred["aaguid"])
+        self.app.audit.record(
+            "vault_initialized", credential_id=cred["id"], credential_name=name, aaguid=cred["aaguid"]
+        )
         self.send_json(201, {"status": "initialized", "credential_id": cred["id"]})
 
     # ---------- items ----------
@@ -198,11 +229,13 @@ class ApproverHandler(BaseHandler):
         nonce = self._consume_nonce(body, "add-credential")
         new = self._register(body, nonce, name)
         existing = {c["id"] for c in doc["credentials"]}
-        audit, signer = self._assert(doc, body, op_challenge("add-credential", nonce, b64url_decode(new["id"]), name),
-                                     existing)
+        audit, signer = self._assert(
+            doc, body, op_challenge("add-credential", nonce, b64url_decode(new["id"]), name), existing
+        )
         self.app.vault.add_credential(new, signer)
-        self.app.audit.record("credential_added", new_credential_id=new["id"], new_credential_name=name,
-                              aaguid=new["aaguid"], **audit)
+        self.app.audit.record(
+            "credential_added", new_credential_id=new["id"], new_credential_name=name, aaguid=new["aaguid"], **audit
+        )
         self.send_json(201, {"status": "ok", "credential_id": new["id"]})
 
     def route_delete_credential(self, cred_id: str) -> None:
@@ -216,7 +249,7 @@ class ApproverHandler(BaseHandler):
         self.app.audit.record("credential_deleted", deleted_credential_id=cred_id, **audit)
         self.send_json(200, {"status": "ok"})
 
-    routes = [
+    routes: ClassVar[list[Route]] = [
         ("GET", re.compile(r"/api/state"), route_state),
         ("POST", re.compile(r"/api/nonce"), route_nonce),
         ("POST", re.compile(r"/api/setup"), route_setup),

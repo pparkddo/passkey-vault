@@ -14,7 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Any, Callable, Iterator
 
 from .audit import AuditLog, utc_now_iso
 from .config import MAX_PENDING_REQUESTS, NONCE_TTL_SECONDS, REQUEST_TTL_SECONDS
@@ -54,11 +54,15 @@ class Request:
     def visible_status(self) -> str:
         return "approved" if self.status == "delivering" else self.status
 
-    def public_view(self, now: float) -> dict:
+    def public_view(self, now: float) -> dict[str, Any]:
         """now: the queue's clock, so expires_in agrees with how the queue decides expiry."""
         return {
-            "id": self.id, "secret": self.secret, "command": self.command, "pubkey": b64url_encode(self.pubkey_der),
-            "created_at": utc_now_iso(self.created), "expires_at": self.expires_at,
+            "id": self.id,
+            "secret": self.secret,
+            "command": self.command,
+            "pubkey": b64url_encode(self.pubkey_der),
+            "created_at": utc_now_iso(self.created),
+            "expires_at": self.expires_at,
             # Remaining lifetime by the server's clock, so clients never depend on their own clock.
             "expires_in": max(0, round(self.expires - now)),
             "status": self.visible_status,
@@ -66,7 +70,9 @@ class Request:
 
 
 class RequestQueue:
-    def __init__(self, audit: AuditLog, ttl: float = REQUEST_TTL_SECONDS, clock=time.time) -> None:
+    def __init__(
+        self, audit: AuditLog, ttl: float = REQUEST_TTL_SECONDS, clock: Callable[[], float] = time.time
+    ) -> None:
         self._audit = audit
         self._ttl = ttl
         self._clock = clock
@@ -100,11 +106,24 @@ class RequestQueue:
             self._refresh(now)
             if sum(r.status == "pending" for r in self._items.values()) >= MAX_PENDING_REQUESTS:
                 raise ApiError(429, "too_many_pending", "too many pending requests")
-            req = Request(id=secrets.token_urlsafe(16), secret=secret, command=command, pubkey_der=pubkey_der,
-                          key_bytes=key_bytes, created=now, expires=now + self._ttl)
+            req = Request(
+                id=secrets.token_urlsafe(16),
+                secret=secret,
+                command=command,
+                pubkey_der=pubkey_der,
+                key_bytes=key_bytes,
+                created=now,
+                expires=now + self._ttl,
+            )
             # Audit first: if the record cannot be written, the request does not exist.
-            self._audit.write("request_created", id=req.id, secret=secret, command=command,
-                              pubkey_sha256=req.pubkey_sha256, expires_at=req.expires_at)
+            self._audit.write(
+                "request_created",
+                id=req.id,
+                secret=secret,
+                command=command,
+                pubkey_sha256=req.pubkey_sha256,
+                expires_at=req.expires_at,
+            )
             self._items[req.id] = req
             return req
 
@@ -112,22 +131,28 @@ class RequestQueue:
         with self._cond:
             return self._lookup(req_id)
 
-    def view(self, req: Request) -> dict:
+    def view(self, req: Request) -> dict[str, Any]:
         return req.public_view(self._clock())
 
-    def pending_views(self) -> list[dict]:
+    def pending_views(self) -> list[dict[str, Any]]:
         with self._cond:
             now = self._clock()
             self._refresh(now)
             pending = [r for r in self._items.values() if r.status == "pending"]
         return [r.public_view(now) for r in pending]  # built outside the lock
 
-    def approve(self, req_id: str, ciphertext: bytes, audit_fields: dict) -> None:
+    def approve(self, req_id: str, ciphertext: bytes, audit_fields: dict[str, Any]) -> None:
         with self._cond:
             r = self._get_pending(req_id)
             # Audit first: an approval that cannot be recorded does not happen.
-            self._audit.write("request_approved", id=r.id, secret=r.secret, command=r.command,
-                              pubkey_sha256=r.pubkey_sha256, **audit_fields)
+            self._audit.write(
+                "request_approved",
+                id=r.id,
+                secret=r.secret,
+                command=r.command,
+                pubkey_sha256=r.pubkey_sha256,
+                **audit_fields,
+            )
             r.status, r.ciphertext = "approved", ciphertext
             self._cond.notify_all()
 
@@ -138,7 +163,7 @@ class RequestQueue:
             r.status, r.finished = "denied", self._clock()
             self._cond.notify_all()
 
-    def _take(self, req_id: str, wait: float) -> dict:
+    def _take(self, req_id: str, wait: float) -> dict[str, Any]:
         """Wait up to `wait` seconds; an approved request moves to "delivering"."""
         with self._cond:
             deadline = self._clock() + wait
@@ -148,6 +173,7 @@ class RequestQueue:
                 if r.status == "consumed":
                     raise ApiError(410, "consumed", "the ciphertext was already delivered")
                 if r.status == "approved":
+                    assert r.ciphertext is not None
                     r.status = "delivering"
                     return {"status": "approved", "ciphertext": b64url_encode(r.ciphertext)}
                 if r.status in ("denied", "expired"):
@@ -170,7 +196,7 @@ class RequestQueue:
             self._cond.notify_all()
 
     @contextmanager
-    def deliver(self, req_id: str, wait: float) -> Iterator[dict]:
+    def deliver(self, req_id: str, wait: float) -> Iterator[dict[str, Any]]:
         """Requester pickup:  with queue.deliver(id, wait) as result: send(result)
 
         An approved ciphertext is dropped only if the block finishes, i.e. the response was sent.
@@ -194,7 +220,7 @@ class NonceStore:
     nonces are remembered, until they expire.
     """
 
-    def __init__(self, ttl: float = NONCE_TTL_SECONDS, clock=time.time) -> None:
+    def __init__(self, ttl: float = NONCE_TTL_SECONDS, clock: Callable[[], float] = time.time) -> None:
         self._ttl = ttl
         self._clock = clock
         self._key = secrets.token_bytes(32)

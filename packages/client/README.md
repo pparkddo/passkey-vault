@@ -16,7 +16,7 @@ from passkey_vault_client import Client
 
 request = Client("http://127.0.0.1:8741").request("github", "gh auth login --with-token")
 print("Approve at", request.approve_url)
-secret = request.wait()   # bytes
+secret = request.wait()  # bytes
 ```
 
 Only depends on `cryptography`. Reference: [docs/cli.md](https://github.com/pparkddo/passkey-vault/blob/main/docs/cli.md).
