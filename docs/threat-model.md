@@ -76,9 +76,9 @@ Running the server on a different host from the requester satisfies this. If the
 
 ## Platform assumptions
 
-See [verification.md](verification.md) for what has and has not been checked on real devices.
-
-- The browser supports the WebAuthn PRF extension for the passkeys in use.
-- A synced passkey returns the same PRF output on every device it syncs to.
+- The browser supports the WebAuthn PRF extension for the passkeys in use. Confirmed for an iPhone
+  with a passkey in Apple Passwords (see the README's Compatibility section).
+- A synced passkey returns the same PRF output on every device it syncs to. Confirmed between that
+  iPhone and a Mac through iCloud.
 - Only same-device (platform or security key) use is supported. Cross-device (hybrid, QR code) flows
   have been reported to return different PRF output and are not a supported way to approve.

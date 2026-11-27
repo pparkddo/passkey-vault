@@ -5,7 +5,7 @@
     PV_E2E_CPU_THROTTLE=8 uv run python tests/e2e_virtual_authenticator.py      # slow the page down 8x
 
 Uses the Chromium that Playwright installed; set PV_CHROMIUM to pick an executable explicitly.
-Virtual authenticators are not real devices; see docs/verification.md for manual device tests.
+Virtual authenticators are not real devices; real-device results are in the README (Compatibility).
 """
 
 from __future__ import annotations

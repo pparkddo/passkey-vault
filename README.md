@@ -172,7 +172,20 @@ Storage URLs look like `postgresql://user:pass@host/db` or `mongodb://host/db`. 
 | [Approver API](docs/openapi/approver.yaml) | Internal API used by the approval page |
 | [Threat model](docs/threat-model.md) | What is protected, and what is not |
 | [Deployment](docs/deployment.md) | Docker, HTTPS proxy, same-host isolation, macOS example |
-| [Verification](docs/verification.md) | What the tests cover, and what still needs a real device |
+
+## Compatibility
+
+Approving needs a browser and passkey provider that support the WebAuthn PRF extension.
+
+| Approver | Result |
+|---|---|
+| iPhone (iOS), Chrome, passkey saved in Apple Passwords | works: setup, adding secrets, approve, deny |
+| Mac (macOS), Safari, the same passkey synced through iCloud | works: same PRF output, so the vault opens on both |
+| Chromium with a virtual authenticator (CI) | works: full flow tested on every commit |
+| Approving from another device by QR code (hybrid) | not supported: reported to give a different PRF output |
+
+To check another browser or passkey provider, open [`tools/prf-test.html`](tools/prf-test.html) over HTTPS
+on it. If PRF is missing, the approval page refuses to create a vault with that passkey.
 
 ## Security
 
@@ -203,14 +216,13 @@ node --test 'tests/js/*.test.mjs'                        # approval page crypto,
 uv run python tests/e2e_virtual_authenticator.py         # end to end in Chromium
 ```
 
-Database, container and deployment tests are opt-in; see [verification](docs/verification.md).
+Database, container and deployment tests are opt-in; see [CONTRIBUTING.md](CONTRIBUTING.md#optional-tests).
 Contributions are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in
 [CHANGELOG.md](CHANGELOG.md); releases follow [RELEASING.md](RELEASING.md).
 
 ## Status
 
-Early. Automated tests cover the protocol, the server, every storage backend, the container image and
-the approval page in Chromium. Checks on real devices, such as iOS Safari, are still open.
+Early (0.x). Tested end to end in CI and on real devices (see [Compatibility](#compatibility)).
 
 ## License
 
