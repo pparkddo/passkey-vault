@@ -51,8 +51,8 @@ class DeployTests(unittest.TestCase):
         self.assertIn("first deployment", r.stdout)
         current = self.prefix / "current"
         self.assertEqual(os.readlink(current), f"releases/{commit}")
-        self.assertTrue((current / "server/passkey_vault/app.py").is_file())
-        self.assertFalse((current / "tests").exists(), "only server/, web/ and deploy/ are deployed")
+        self.assertTrue((current / "packages/server/src/passkey_vault/app.py").is_file())
+        self.assertFalse((current / "tests").exists(), "only the server package and deploy/ are deployed")
         self.assertRegex(os.readlink(self.prefix / "venv"), r"^venvs/py3\.15-[0-9a-f]{16}$")
         self.assertIn(commit, (self.prefix / "deploy.log").read_text())
 
@@ -83,7 +83,7 @@ class DeployTests(unittest.TestCase):
             proc.terminate()
             out, _ = proc.communicate(timeout=10)
         self.assertNotIn(setup, out, "outside dev mode the setup code is never logged")
-        self.assertFalse(list((current / "server").rglob("__pycache__")), "no bytecode is written into the release")
+        self.assertFalse(list((current / "packages").rglob("__pycache__")), "no bytecode is written into the release")
 
     def test_rejects_bad_input(self) -> None:
         self.assertNotEqual(self.deploy("HEAD").returncode, 0)

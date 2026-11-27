@@ -1,0 +1,22 @@
+[project]
+name = "passkey-vault-client"
+version = "0.1.0"
+description = "Requester SDK and the `pkv` CLI for passkey-vault: get one secret for one command after a passkey approval."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+keywords = ["passkey", "webauthn", "secrets", "ai-agents", "cli"]
+dependencies = ["cryptography>=42"]
+
+[project.scripts]
+pkv = "passkey_vault_client.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pparkddo/passkey-vault"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/passkey_vault_client"]

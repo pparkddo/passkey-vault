@@ -1,0 +1,29 @@
+[project]
+name = "passkey-vault-server"
+version = "0.1.0"
+description = "passkey-vault server and approval page: release one secret to one command after a passkey approval."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.15"
+keywords = ["passkey", "webauthn", "prf", "secrets", "ai-agents"]
+dependencies = [
+    "cryptography>=50.0.2",
+    "webauthn>=3.0.1",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.3.9"]
+mongodb = ["pymongo>=4.20.2"]
+
+[project.scripts]
+passkey-vault = "passkey_vault.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/pparkddo/passkey-vault"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/passkey_vault"]

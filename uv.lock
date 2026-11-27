@@ -2,6 +2,22 @@ version = 1
 revision = 5
 requires-python = ">=3.15"
 
+[manifest]
+members = [
+    "passkey-vault-client",
+    "passkey-vault-server",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "openapi-spec-validator", specifier = ">=0.9.0" },
+    { name = "passkey-vault-client", editable = "packages/client" },
+    { name = "passkey-vault-server", extras = ["postgres", "mongodb"], editable = "packages/server" },
+    { name = "playwright", specifier = ">=1.65.2" },
+    { name = "pyyaml", specifier = ">=6.0.4" },
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.8.0"
@@ -269,9 +285,20 @@ wheels = [
 ]
 
 [[package]]
-name = "passkey-vault"
+name = "passkey-vault-client"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "packages/client" }
+dependencies = [
+    { name = "cryptography" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "cryptography", specifier = ">=42" }]
+
+[[package]]
+name = "passkey-vault-server"
+version = "0.1.0"
+source = { editable = "packages/server" }
 dependencies = [
     { name = "cryptography" },
     { name = "webauthn" },
@@ -285,14 +312,6 @@ postgres = [
     { name = "psycopg", extra = ["binary"] },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "jsonschema" },
-    { name = "openapi-spec-validator" },
-    { name = "playwright" },
-    { name = "pyyaml" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=50.0.2" },
@@ -301,14 +320,6 @@ requires-dist = [
     { name = "webauthn", specifier = ">=3.0.1" },
 ]
 provides-extras = ["postgres", "mongodb"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "jsonschema", specifier = ">=4.26.0" },
-    { name = "openapi-spec-validator", specifier = ">=0.9.0" },
-    { name = "playwright", specifier = ">=1.65.2" },
-    { name = "pyyaml", specifier = ">=6.0.4" },
-]
 
 [[package]]
 name = "pathable"

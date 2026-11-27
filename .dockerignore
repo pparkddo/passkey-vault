@@ -1,6 +1,5 @@
 *
-!server/
-!web/
+!packages/server/src/
 !deploy/requirements.lock
 !deploy/requirements-db.lock
 **/__pycache__

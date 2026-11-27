@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - run: uv sync --all-extras --locked
+      - run: uv sync --locked
       - name: Python tests (server, storage backends, OpenAPI, vectors)
         run: uv run python -m unittest discover -s tests -v
       - name: JavaScript tests
@@ -42,8 +42,20 @@ jobs:
           uv run python tests/e2e_virtual_authenticator.py
       - name: Lock files match uv.lock
         run: |
-          uv export --no-dev --no-emit-project --format requirements-txt --quiet | diff - deploy/requirements.lock
-          uv export --no-dev --no-emit-project --extra postgres --extra mongodb --format requirements-txt --quiet | diff - deploy/requirements-db.lock
+          uv export --package passkey-vault-server --no-emit-workspace --no-dev --format requirements-txt --quiet | diff - deploy/requirements.lock
+          uv export --package passkey-vault-server --no-emit-workspace --no-dev --extra postgres --extra mongodb --format requirements-txt --quiet | diff - deploy/requirements-db.lock
+      - name: Packages build
+        run: uv build --all-packages
+
+  client-oldest-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - name: Client package alone on Python 3.10
+        run: |
+          uv run --isolated --no-project --python 3.10 --with ./packages/client python -m unittest tests/test_client_vectors.py -v
+          uv run --isolated --no-project --python 3.10 --with ./packages/client pkv --version
 
   container:
     runs-on: ubuntu-latest

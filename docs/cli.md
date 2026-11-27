@@ -1,0 +1,89 @@
+# `pkv` and the Python SDK
+
+`pkv` is the requester side of passkey-vault. It asks the server for one secret for one command,
+waits while you approve the request with a passkey, then runs that command once with the secret.
+
+## Install
+
+```sh
+uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+# or: pipx install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+```
+
+Requires Python 3.10 or later. The only dependency is `cryptography`.
+
+## `pkv run`
+
+```
+pkv run [options] SECRET -- COMMAND [ARG...]
+pkv run [options] SECRET -c 'SHELL COMMAND'
+```
+
+| Form | What runs | What the approver sees |
+|---|---|---|
+| `-- COMMAND [ARG...]` | the program directly, no shell | the arguments, shell-quoted (`shlex.join`) |
+| `-c 'SHELL COMMAND'` | `/bin/sh -c 'SHELL COMMAND'` | the string exactly as given |
+
+Use `--` when you can; use `-c` when you need pipes, redirection or here-strings.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--env NAME` | `PKV_SECRET` | environment variable that receives the secret |
+| `--stdin` | off | write the secret to the command's stdin instead of an environment variable |
+| `--server URL` | `$PKV_SERVER`, else `http://127.0.0.1:8741` | the server's requester endpoint |
+| `--timeout SECONDS` | `330` | stop waiting for a decision after this long |
+| `--key-bits N` | `3072` | size of the one-time RSA key (2048, 3072 or 4096) |
+
+Everything after the first `--` belongs to the command, so options for `pkv` go before it.
+
+`pkv` prints its progress, including the approval link, on stderr. The command's own stdout and stderr
+pass through untouched.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| the command's code | approved, and the command ran |
+| 2 | usage error |
+| 3 | the approver denied the request |
+| 4 | the request expired, or `--timeout` passed |
+| 5 | server, network or protocol error (for example `unknown_secret`) |
+| 127 | the command was not found |
+| 130 | interrupted |
+
+## How the secret is handled
+
+- A new RSA key pair is generated in memory for every request and dropped after decryption.
+- The secret reaches only the one process you asked to run: through its environment (`--env`) or its
+  stdin (`--stdin`). It is never printed, logged or written to disk by `pkv`.
+- Anything that can inspect that process (the same user, root) can read the secret while it runs.
+  `--stdin` avoids leaving it in the process environment.
+- The approver sees the command exactly as it will run, and the ciphertext can only be decrypted for
+  that exact command string (see the [requester interface](interface.md)).
+
+## Python SDK
+
+```python
+from passkey_vault_client import Client, RequestDenied, RequestExpired
+
+client = Client("http://127.0.0.1:8741")
+request = client.request("github", "gh auth login --with-token")
+print("Approve at", request.approve_url)
+
+try:
+    secret = request.wait(timeout=330)   # bytes
+except (RequestDenied, RequestExpired):
+    ...
+```
+
+| Name | Description |
+|---|---|
+| `Client(base_url, http_timeout=10)` | connection to the requester endpoint |
+| `Client.request(secret, command, key_bits=3072)` | create a request; returns an `ApprovalRequest` |
+| `ApprovalRequest.approve_url`, `.expires_at`, `.id` | what to show the approver |
+| `ApprovalRequest.poll(wait=30)` | one long poll; returns the raw status object |
+| `ApprovalRequest.wait(timeout=330)` | block until decided; returns the secret as bytes |
+| `PkvError` | base class; `ServerError` (with `.status` and `.code`), `RequestDenied`, `RequestExpired`, `RequestTimeout` |
+
+Only run the exact `command` string you passed to `request()`: the approver approved that string, and
+the ciphertext is bound to it.

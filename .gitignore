@@ -1,9 +1,10 @@
-.venv/
 __pycache__/
-*.pyc
+.DS_Store
 .pytest_cache/
-node_modules/
+.venv/
+*.pyc
 /data/
 /tmp/
+dist/
+node_modules/
 test-results/
-.DS_Store

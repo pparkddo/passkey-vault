@@ -1,21 +1,32 @@
-"""Shared test helpers: protocol crypto building blocks, ports, polling."""
+"""Shared test helpers: HTTP, protocol crypto building blocks, ports, polling."""
 
 from __future__ import annotations
 
+import json
 import socket
-import sys
 import time
+import urllib.error
 import urllib.request
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "server"))
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric import padding  # noqa: E402
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF  # noqa: E402
+from passkey_vault.formats import HKDF_INFO, HKDF_SALT
 
-from passkey_vault.formats import HKDF_INFO, HKDF_SALT  # noqa: E402
+
+def http_json(method: str, url: str, body: dict | None = None, timeout: float = 10,
+              headers: dict | None = None) -> tuple[int, dict]:
+    """JSON request -> (status, JSON body); HTTP errors are returned, not raised."""
+    data = None if body is None else json.dumps(body).encode()
+    hdrs = {**({"Content-Type": "application/json"} if data else {}), **(headers or {})}
+    req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        with e:
+            return e.code, json.loads(e.read() or b"{}")
 
 
 def oaep(label: bytes) -> padding.OAEP:

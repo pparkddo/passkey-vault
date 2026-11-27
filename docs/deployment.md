@@ -38,10 +38,11 @@ starts. Run a single server instance per vault: pending requests live in its mem
 ## Run without Docker
 
 ```sh
-uv sync --extra postgres --extra mongodb      # extras only if you use those backends
-PYTHONPATH=server uv run python -m passkey_vault \
-  --origin https://vault.example.com --data-dir /var/lib/passkey-vault
+uv tool install "passkey-vault-server[postgres,mongodb] @ git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/server"
+passkey-vault --origin https://vault.example.com --data-dir /var/lib/passkey-vault
 ```
+
+Drop `[postgres,mongodb]` if you use file storage.
 
 | Option | Environment | Default |
 |---|---|---|

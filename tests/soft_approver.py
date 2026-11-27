@@ -19,8 +19,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from passkey_vault import formats as f
-from ref_client import _call
-from support import oaep, wrap_key
+from support import http_json, oaep, wrap_key
 
 FLAG_UP, FLAG_UV, FLAG_BE, FLAG_BS, FLAG_AT = 0x01, 0x04, 0x08, 0x10, 0x40
 
@@ -88,7 +87,7 @@ class SoftApprover:
     # ---- HTTP ----
     def call(self, method: str, path: str, body: dict | None = None, origin: str | None = "default") -> tuple[int, dict]:
         origin = self.origin if origin == "default" else origin
-        return _call(method, self.base + path, body, timeout=10, headers={"Origin": origin} if origin else None)
+        return http_json(method, self.base + path, body, timeout=10, headers={"Origin": origin} if origin else None)
 
     def sign_op(self, op: str, by: SoftCredential, *fields: str | bytes) -> dict:
         """{nonce, assertion} for an operation challenge, like signOnly() in web/js/manage.js."""

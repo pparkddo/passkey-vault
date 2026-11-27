@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-REPO_WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+DEFAULT_WEB_DIR = Path(__file__).resolve().parent / "web"  # the approval page ships inside the package
 
 REQUEST_TTL_SECONDS = 300
 NONCE_TTL_SECONDS = 300
@@ -45,7 +45,7 @@ class Config:
     approver_port: int = 8740
     requester_port: int = 8741
     bind: str = "127.0.0.1"
-    web_dir: Path = REPO_WEB_DIR
+    web_dir: Path = DEFAULT_WEB_DIR
     dev: bool = False
     access_log: bool = True
 
@@ -55,7 +55,7 @@ class Config:
 
 
 def parse_args(argv: list[str] | None = None) -> Config:
-    p = argparse.ArgumentParser(prog="passkey_vault", description="passkey-vault approval server")
+    p = argparse.ArgumentParser(prog="passkey-vault", description="passkey-vault approval server")
     p.add_argument("--origin", help="origin the approval page is served from, e.g. https://vault.example.com")
     p.add_argument("--data-dir", type=Path,
                    help="directory for the setup code (and for the vault and audit log with file storage)")
@@ -69,7 +69,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
                    help="address for both doors (default 127.0.0.1; use 0.0.0.0 only inside a container)")
     p.add_argument("--approver-port", type=int, default=8740)
     p.add_argument("--requester-port", type=int, default=8741)
-    p.add_argument("--web-dir", type=Path, default=REPO_WEB_DIR)
+    p.add_argument("--web-dir", type=Path, default=DEFAULT_WEB_DIR)
     p.add_argument("--dev", action="store_true",
                    help="development mode: origin=http://localhost:<approver-port>, data-dir=./data, print the setup code")
     a = p.parse_args(argv)

@@ -22,8 +22,6 @@
     <string>__ORIGIN__</string>
     <string>--data-dir</string>
     <string>__PREFIX__/data</string>
-    <string>--web-dir</string>
-    <string>__PREFIX__/current/web</string>
     <string>--approver-port</string>
     <string>8740</string>
     <string>--requester-port</string>
@@ -32,7 +30,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PYTHONPATH</key>
-    <string>__PREFIX__/current/server</string>
+    <string>__PREFIX__/current/packages/server/src</string>
     <key>PYTHONDONTWRITEBYTECODE</key>
     <string>1</string>
     <key>PATH</key>

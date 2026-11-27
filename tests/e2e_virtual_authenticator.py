@@ -19,13 +19,12 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
 from passkey_vault.app import App  # noqa: E402
-from ref_client import OneShotRequest, RequesterError  # noqa: E402
+from passkey_vault_client import ApprovalRequest, Client, PkvError  # noqa: E402
 from support import free_port  # noqa: E402
 from test_server import make_config  # noqa: E402
 
@@ -123,15 +122,14 @@ class E2E(unittest.TestCase):
             shown = self.page.locator("#status").inner_text(timeout=1000)
             self.fail(f"waited for status {pattern!r}, page shows {shown!r}; console: {self.console}")
 
-    def request(self, command: str) -> tuple[OneShotRequest, dict, threading.Thread]:
-        req = OneShotRequest(self.requester, "github", command, bits=2048)
-        req.create()
+    def request(self, command: str) -> tuple[ApprovalRequest, dict, threading.Thread]:
+        req = Client(self.requester).request("github", command, key_bits=2048)
         result: dict = {}
 
         def wait() -> None:
             try:
-                result["secret"] = req.wait_result(total_timeout=60).decode()
-            except RequesterError as e:
+                result["secret"] = req.wait(timeout=60).decode()
+            except PkvError as e:
                 result["error"] = str(e)
 
         t = threading.Thread(target=wait)

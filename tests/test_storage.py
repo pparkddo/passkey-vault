@@ -19,7 +19,6 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from passkey_vault.storage import StoreConflict, open_storage  # noqa: E402

@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "tests"))
 
-from support import oaep, spki_der as spki, wrap_key  # noqa: E402  (also puts server/ on sys.path)
+from support import oaep, spki_der as spki, wrap_key  # noqa: E402
 
 from passkey_vault import formats as f  # noqa: E402
 

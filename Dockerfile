@@ -26,10 +26,9 @@ RUN useradd --system --uid 10001 --user-group --home-dir /nonexistent --shell /u
  && install -d -o passkey-vault -g passkey-vault -m 0700 /data
 
 COPY --from=deps /venv /venv
-COPY server /app/server
-COPY web /app/web
+COPY packages/server/src /app/src
 
-ENV PYTHONPATH=/app/server \
+ENV PYTHONPATH=/app/src \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -42,5 +41,5 @@ EXPOSE 8740 8741
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD ["/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8740/', timeout=2)"]
 
-ENTRYPOINT ["/venv/bin/python", "-m", "passkey_vault", "--bind", "0.0.0.0", "--data-dir", "/data", "--web-dir", "/app/web"]
+ENTRYPOINT ["/venv/bin/python", "-m", "passkey_vault", "--bind", "0.0.0.0", "--data-dir", "/data"]
 CMD ["--origin", "http://localhost:8740"]

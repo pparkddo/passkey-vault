@@ -68,7 +68,7 @@ DIFF_FILE="$(mktemp "$PREFIX/.diff.XXXXXX")"
 cleanup() { rm -rf "$STAGE" "$DIFF_FILE"; }
 trap cleanup EXIT
 
-run_git archive --format=tar "$COMMIT" server web deploy LICENSE \
+run_git archive --format=tar "$COMMIT" packages/server/src deploy LICENSE \
   | /usr/bin/tar -x --no-same-owner --no-same-permissions -f - -C "$STAGE"
 
 # Only regular files and directories (no symlinks or devices).
@@ -148,7 +148,7 @@ if [[ $TEST_MODE -eq 0 ]]; then
 fi
 
 # The placed code must import with the placed virtualenv.
-"$VENV/bin/python" -I -B -c "import sys; sys.path.insert(0, sys.argv[1]); import passkey_vault.app" "$RELEASE/server" \
+"$VENV/bin/python" -I -B -c "import sys; sys.path.insert(0, sys.argv[1]); import passkey_vault.app" "$RELEASE/packages/server/src" \
   || die "the placed code does not import"
 
 ln -shf "releases/$COMMIT" "$PREFIX/current"

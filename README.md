@@ -63,8 +63,10 @@ for what it does and does not protect against.
 
 ## Quick start
 
-Requirements: Docker, and a browser plus passkey provider that support the WebAuthn PRF extension
-(check yours with [`tools/prf-test.html`](tools/prf-test.html)).
+Requirements: Docker, [uv](https://docs.astral.sh/uv/), and a browser plus passkey provider that
+support the WebAuthn PRF extension (check yours with [`tools/prf-test.html`](tools/prf-test.html)).
+
+**1. Start the server**
 
 ```sh
 git clone https://github.com/pparkddo/passkey-vault && cd passkey-vault
@@ -72,32 +74,72 @@ docker compose up -d
 docker compose exec passkey-vault cat /data/setup-code
 ```
 
-Open <http://localhost:8740>, enter the setup code, create your passkey and add a secret.
+Open <http://localhost:8740>, enter the setup code, create your passkey and add a secret named `github`.
 
-Then ask for it from the command line with the reference requester (needs [uv](https://docs.astral.sh/uv/)):
+**2. Install `pkv`** on the machine where your agent or scripts run
 
 ```sh
-uv run python tests/ref_client.py github 'gh auth login --with-token <<< "$PASSKEY_VAULT_SECRET"' --run
+uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
 ```
 
-It prints an approval link, waits for you, then runs the command once with the secret in
-`$PASSKEY_VAULT_SECRET`.
+**3. Use a secret**
+
+```sh
+pkv run github --stdin -- gh auth login --with-token   # gh reads the token from stdin
+```
+
+`pkv` prints an approval link and waits. Open it, check the command, approve with your passkey, and
+`pkv` runs the command once with the secret on its stdin (or in `$PKV_SECRET` without `--stdin`).
 
 For real use, serve the approval page over HTTPS and run the server where requesters cannot modify
 it. See [deployment](docs/deployment.md).
 
-## Writing a requester
+## Use cases
 
-A requester is any program that follows the [requester interface](docs/interface.md):
+### Let an AI agent sign in without seeing your password store
 
-1. Generate an RSA key pair (3072 bits recommended) in memory.
-2. `POST /requests` with the secret name, the command and the public key; show `approve_url` to the user.
-3. Poll `GET /requests/{id}?wait=30` until it returns `approved`, `denied` or `expired`.
-4. Decrypt the ciphertext with RSA-OAEP (SHA-256) and the request's label, run the command once, and
-   discard the key.
+Tell the agent how to ask, for example in `AGENTS.md` or `CLAUDE.md`:
 
-[`tests/ref_client.py`](tests/ref_client.py) is a short reference implementation. Check yours against
-the [test vectors](test-vectors).
+```markdown
+When a command needs a password or token, do not ask me for it. Run it through pkv:
+
+    pkv run <secret-name> --stdin -- <command that reads the secret from stdin>
+    pkv run <secret-name> -c '<shell command that uses "$PKV_SECRET">'
+
+pkv prints an approval link on stderr. Show me that link and wait; I approve it on my phone.
+Exit code 3 means I denied it: do not retry without asking.
+```
+
+The agent never holds a long-lived credential. Each use is a separate request that shows you the exact
+command, and the secret goes only to that one process.
+
+### Approve from your phone while you are away
+
+Serve the approval page on an HTTPS name your phone can reach (your own domain, or a private network
+you already use). The agent's message carries the link; tapping it opens the request, and Face ID or
+Touch ID approves it. Nothing needs to be installed on the phone.
+
+### Scripts and scheduled jobs that should not hold a token
+
+```sh
+pkv run backup-token --timeout 600 -c 'restic -r s3:example/backups backup /srv' || exit $?
+```
+
+Every run asks for approval, and the audit log records who approved which command. Exit codes
+(`3` denied, `4` expired) let the script tell a refusal from a failure.
+
+### Build your own requester
+
+```python
+from passkey_vault_client import Client
+
+request = Client().request("github", "deploy --env production")
+print("Approve at", request.approve_url)
+secret = request.wait()   # bytes, for exactly this command
+```
+
+Any language works: follow the [requester interface](docs/interface.md) and check your implementation
+against the [test vectors](test-vectors). Full reference: [`pkv` and the SDK](docs/cli.md).
 
 ## Configuration
 
@@ -115,6 +157,7 @@ Storage URLs look like `postgresql://user:pass@host/db` or `mongodb://host/db`. 
 
 | | |
 |---|---|
+| [`pkv` and the SDK](docs/cli.md) | Commands, options, exit codes, Python API |
 | [Design](docs/design.md) | Flow, cryptography, storage, approval page |
 | [Requester interface](docs/interface.md) | The public contract, with [OpenAPI](docs/openapi/requester.yaml) |
 | [Approver API](docs/openapi/approver.yaml) | Internal API used by the approval page |
@@ -128,13 +171,22 @@ The server, the approval page and the HTTPS proxy in front of them must run wher
 change them; a separate host is simplest. Report vulnerabilities privately as described in
 [SECURITY.md](SECURITY.md).
 
+## Repository layout
+
+| Path | Package | Contents |
+|---|---|---|
+| [`packages/server`](packages/server) | `passkey-vault-server` | the server and the approval page (`passkey-vault` command) |
+| [`packages/client`](packages/client) | `passkey-vault-client` | the requester SDK and the `pkv` command |
+| [`docs/`](docs), [`test-vectors/`](test-vectors) | | the protocol both packages implement |
+| [`deploy/`](deploy) | | lock files and the macOS example |
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/) and Node.js 24.
 
 ```sh
-uv sync --all-extras
-PYTHONPATH=server uv run python -m passkey_vault --dev   # http://localhost:8740, setup code printed
+uv sync                                                  # both packages, editable, plus dev tools
+uv run passkey-vault --dev                               # http://localhost:8740, setup code printed
 uv run python -m unittest discover -s tests              # Python tests
 node --test 'tests/js/*.test.mjs'                        # approval page crypto, in Node
 uv run python tests/e2e_virtual_authenticator.py         # end to end in Chromium

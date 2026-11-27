@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from cryptography.exceptions import InvalidTag  # noqa: E402
@@ -23,7 +22,7 @@ from passkey_vault import formats as f  # noqa: E402
 from passkey_vault.app import App  # noqa: E402
 from passkey_vault.config import Config  # noqa: E402
 from passkey_vault.requests_queue import RequestQueue  # noqa: E402
-from ref_client import OneShotRequest, RequesterError  # noqa: E402
+from passkey_vault_client import ApprovalRequest, Client, PkvError  # noqa: E402
 from soft_approver import SoftAuthenticator, SoftApprover  # noqa: E402
 
 ORIGIN = "http://localhost:8740"
@@ -76,10 +75,8 @@ class ServerTestBase(unittest.TestCase):
         self.assertEqual(st, 200, body)
 
     def new_request(self, command: str = "printenv PASSKEY_VAULT_SECRET", secret: str = "github",
-                    bits: int = 2048) -> OneShotRequest:
-        req = OneShotRequest(self.requester_url, secret, command, bits=bits)
-        req.create()
-        return req
+                    bits: int = 2048) -> ApprovalRequest:
+        return Client(self.requester_url).request(secret, command, key_bits=bits)
 
     def fake_clock(self, start: float = 1000.0) -> list[float]:
         """Swap in a request queue driven by a fake clock; advance it with clock[0] += seconds."""
@@ -87,7 +84,7 @@ class ServerTestBase(unittest.TestCase):
         self.app.queue = RequestQueue(self.app.audit, ttl=300, clock=lambda: clock[0])
         return clock
 
-    def approve_raw(self, req: OneShotRequest, cred, ciphertext: bytes) -> tuple[int, dict]:
+    def approve_raw(self, req: ApprovalRequest, cred, ciphertext: bytes) -> tuple[int, dict]:
         """Sign the real challenge with `cred` but upload an arbitrary ciphertext."""
         challenge = f.approve_challenge(req.id, req.secret, req.command, req.pubkey_der)
         return self.approver.call("POST", f"/api/requests/{req.id}/approve",
@@ -117,7 +114,7 @@ class SetupTests(ServerTestBase):
         self.assertFalse(self.app.vault.initialized)
 
     def test_request_before_setup(self) -> None:
-        with self.assertRaises(RequesterError) as cm:
+        with self.assertRaises(PkvError) as cm:
             self.new_request()
         self.assertIn("vault_not_initialized", str(cm.exception))
 
@@ -143,7 +140,7 @@ class ApprovalFlowTests(ServerTestBase):
         req = self.new_request(bits=3072)
         threading.Timer(0.3, lambda: self.approver.approve(req.id)).start()
         t0 = time.monotonic()
-        self.assertEqual(req.wait_result().decode(), SECRET)
+        self.assertEqual(req.wait().decode(), SECRET)
         self.assertLess(time.monotonic() - t0, 5)
 
     def test_wrong_label_cannot_decrypt(self) -> None:
@@ -249,14 +246,14 @@ class ApprovalFlowTests(ServerTestBase):
     def test_too_many_pending(self) -> None:
         for _ in range(20):
             self.new_request()
-        with self.assertRaises(RequesterError) as cm:
+        with self.assertRaises(PkvError) as cm:
             self.new_request()
         self.assertIn("too_many_pending", str(cm.exception))
 
     def test_secrets_never_on_disk(self) -> None:
         req = self.new_request()
         self.approver.approve(req.id)
-        req.wait_result()
+        req.wait()
         for p in self.app.config.data_dir.iterdir():
             self.assertNotIn(SECRET.encode(), p.read_bytes(), p.name)
             self.assertEqual(p.stat().st_mode & 0o077, 0, f"{p.name} must be owner-only")
@@ -372,7 +369,7 @@ class ApproverApiTests(ServerTestBase):
         first, second = self.approver.creds
         req = self.new_request()
         self.assertEqual(self.approver.approve(req.id, cred=second)[0], 200, "the new passkey can approve")
-        self.assertEqual(req.wait_result().decode(), SECRET)
+        self.assertEqual(req.wait().decode(), SECRET)
         self.assertEqual(self.approver.delete_credential(first, by=second)[0], 200)
         st, body = self.approver.delete_credential(second, by=second)
         self.assertEqual((st, body["error"]), (409, "last_credential"))
@@ -460,12 +457,12 @@ class PersistenceTests(ServerTestBase):
         self.approver.base = f"http://127.0.0.1:{self.approver_port}"
         self.assertTrue(self.app.vault.initialized)
         self.assertIsNone(self.app.vault.ensure_setup_code())
-        req.base = self.requester_url
-        with self.assertRaises(RequesterError):
+        req.client = Client(self.requester_url)
+        with self.assertRaises(PkvError):
             req.poll(0)
         req2 = self.new_request("true")
         self.assertEqual(self.approver.approve(req2.id)[0], 200)
-        self.assertEqual(req2.wait_result().decode(), SECRET)
+        self.assertEqual(req2.wait().decode(), SECRET)
 
     def test_rp_id_mismatch_refuses_start(self) -> None:
         self.init_vault()

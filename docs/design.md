@@ -11,7 +11,7 @@ attacks and limits are in [threat-model.md](threat-model.md), and running it is 
 | **Requester** | A program that needs a secret for one command, for example a CLI used by an AI agent. Not trusted. |
 | **Approver** | The person who owns the secrets. Approves on any device whose browser supports passkeys with the PRF extension. |
 | **Server** | Stores ciphertext, queues requests, serves the approval page. Cannot decrypt anything. |
-| **Approval page** | The web page in `web/`. Does all cryptography: WebAuthn, PRF, decryption, re-encryption. |
+| **Approval page** | The web page in [`packages/server/src/passkey_vault/web/`](../packages/server/src/passkey_vault/web). Does all cryptography: WebAuthn, PRF, decryption, re-encryption. |
 | **Operator** | Whoever deploys the server. Often the approver. |
 
 ## Flow
@@ -93,7 +93,7 @@ Why these choices:
   stored request when it verifies the signature. What was shown, what was signed and what was accepted
   are therefore the same thing.
 
-Both implementations (`server/passkey_vault/formats.py`, `web/js/formats.js`) are checked against
+All implementations (the server's `formats.py`, the page's `js/formats.js`, the client's `protocol.py`) are checked against
 [`test-vectors/`](../test-vectors).
 
 ## Lifecycles
@@ -170,7 +170,7 @@ any passkey prompt; they are bound to the ciphertext through the item AAD. Secre
 encrypted.
 
 To add a backend, implement `VaultStore` and `AuditSink` in
-[`server/passkey_vault/storage/`](../server/passkey_vault/storage) and run
+[`packages/server/src/passkey_vault/storage/`](../packages/server/src/passkey_vault/storage) and run
 [`tests/test_storage.py`](../tests/test_storage.py) against it.
 
 The audit log records request creation, approval (including the raw WebAuthn signature),

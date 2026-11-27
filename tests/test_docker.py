@@ -17,10 +17,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from ref_client import OneShotRequest  # noqa: E402
+from passkey_vault_client import Client  # noqa: E402
 from soft_approver import SoftApprover  # noqa: E402
 from support import wait_for_url  # noqa: E402
 
@@ -59,10 +58,9 @@ class DockerTests(unittest.TestCase):
             approver = SoftApprover(ORIGIN.replace("localhost", "127.0.0.1"), "localhost", ORIGIN)
             self.assertEqual(approver.setup(code)[0], 201)
             self.assertEqual(approver.put_item("github", "github.com", "me", SECRET)[0], 200)
-            req = OneShotRequest("http://127.0.0.1:8741", "github", "echo from-container", bits=2048)
-            req.create()
+            req = Client("http://127.0.0.1:8741").request("github", "echo from-container", key_bits=2048)
             self.assertEqual(approver.approve(req.id)[0], 200)
-            self.assertEqual(req.wait_result().decode(), SECRET)
+            self.assertEqual(req.wait().decode(), SECRET)
 
             # Hardening: unprivileged user, read-only root filesystem.
             self.assertEqual(compose("exec", "-T", "passkey-vault", "id", "-u", env=env).stdout.strip(), "10001")
