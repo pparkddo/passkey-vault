@@ -26,7 +26,9 @@ services:
       context: .
       args:
         LOCK: ${PASSKEY_VAULT_LOCK:-requirements-db.lock}
-    image: passkey-vault:local
+    # Built from this checkout by default. To run a published release instead:
+    #   PASSKEY_VAULT_IMAGE=ghcr.io/pparkddo/passkey-vault:0.1.0 docker compose up -d --no-build
+    image: ${PASSKEY_VAULT_IMAGE:-passkey-vault:local}
     command: ["--origin", "${PASSKEY_VAULT_ORIGIN:-http://localhost:8740}"]
     environment:
       # Empty means file storage in /data. The profiles below set this through .env or the shell.

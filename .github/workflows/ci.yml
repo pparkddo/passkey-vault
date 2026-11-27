@@ -46,9 +46,9 @@ jobs:
           uv run playwright install --with-deps chromium
           uv run python tests/e2e_virtual_authenticator.py
       - name: Lock files match uv.lock
-        run: |
-          uv export --package passkey-vault-server --no-emit-workspace --no-dev --format requirements-txt --quiet | diff - deploy/requirements.lock
-          uv export --package passkey-vault-server --no-emit-workspace --no-dev --extra postgres --extra mongodb --format requirements-txt --quiet | diff - deploy/requirements-db.lock
+        run: scripts/export-locks.sh --check
+      - name: Versions and CHANGELOG agree
+        run: scripts/version.sh check
       - name: Packages build
         run: uv build --all-packages
 
