@@ -143,8 +143,8 @@ When `pkv` runs on a different machine from the server:
    but only do this on a network you trust (or put the server's firewall in front). The approver door
    stays on loopback for the tunnel.
 
-2. Copy the requester token from the server (`docker compose exec passkey-vault cat /data/requester-token`)
-   to the other machine and run there:
+2. On the other machine, install `pkv` (`uv tool install passkey-vault-client`). Copy the requester
+   token from the server (`docker compose exec passkey-vault cat /data/requester-token`) and run there:
 
    ```sh
    PKV_TOKEN=<requester-token> pkv setup --server http://<server-lan-ip>:8741

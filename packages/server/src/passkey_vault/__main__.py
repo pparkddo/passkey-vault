@@ -15,6 +15,7 @@ def main() -> None:
     os.umask(0o077)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = App(parse_args())
+    app.vault.ensure_setup_code()  # exists before the server accepts connections (and before `up -d` returns usefully)
     app.start()
     app.announce()
     stop = threading.Event()
