@@ -56,10 +56,18 @@ class Config:
     web_dir: Path = DEFAULT_WEB_DIR
     dev: bool = False
     access_log: bool = True
+    # Requester authentication: on by default. A fixed token (e.g. from a platform secret) or, when
+    # None, one generated on first start and kept in <data-dir>/requester-token.
+    requester_auth: bool = True
+    requester_token: str | None = None
 
     @property
     def setup_code_path(self) -> Path:
         return self.data_dir / "setup-code"
+
+    @property
+    def requester_token_path(self) -> Path:
+        return self.data_dir / "requester-token"
 
 
 def parse_args(argv: list[str] | None = None) -> Config:
@@ -80,6 +88,12 @@ def parse_args(argv: list[str] | None = None) -> Config:
         default=None,
         help="comma-separated host names (besides loopback) that requesters use to reach the requester "
         "door; also read from PASSKEY_VAULT_REQUESTER_HOSTS",
+    )
+    p.add_argument(
+        "--no-requester-token",
+        action="store_true",
+        help="let requesters call without a token (also PASSKEY_VAULT_REQUESTER_AUTH=off); only for a "
+        "requester door that nobody else can reach",
     )
     p.add_argument(
         "--bind",
@@ -124,4 +138,6 @@ def parse_args(argv: list[str] | None = None) -> Config:
         bind=a.bind,
         web_dir=a.web_dir.resolve(),
         dev=a.dev,
+        requester_auth=not a.no_requester_token and os.environ.get("PASSKEY_VAULT_REQUESTER_AUTH", "").lower() != "off",
+        requester_token=os.environ.get("PASSKEY_VAULT_REQUESTER_TOKEN") or None,
     )

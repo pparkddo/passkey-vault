@@ -137,7 +137,7 @@ class E2E(unittest.TestCase):
             self.fail(f"waited for status {pattern!r}, page shows {shown!r}; console: {self.console}")
 
     def request(self, command: str) -> tuple[ApprovalRequest, dict, threading.Thread]:
-        req = Client(self.requester).request("github", command, key_bits=2048)
+        req = Client(self.requester, self.app.requester_token).request("github", command, key_bits=2048)
         result: dict = {}
 
         def wait() -> None:

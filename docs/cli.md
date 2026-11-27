@@ -12,6 +12,34 @@ uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=pack
 
 Requires Python 3.10 or later. The only dependency is `cryptography`.
 
+## `pkv setup`
+
+Run once on the machine where requesters run. It asks for the server URL and the requester token
+(input hidden), checks both against the server, and saves them only if the check passes.
+
+```sh
+pkv setup                                   # interactive
+pkv setup --server https://vault.example.com --token-stdin < token.txt
+```
+
+The token is in the server's data directory: `docker compose exec passkey-vault cat /data/requester-token`,
+or the value the operator configured.
+
+Settings are read in this order: command-line option, environment (`PKV_SERVER`, `PKV_TOKEN`), the
+config file, the default `http://127.0.0.1:8741`. The config file is
+`$XDG_CONFIG_HOME/pkv/config.json` (usually `~/.config/pkv/config.json`; `%APPDATA%\pkv\config.json`
+on Windows; `PKV_CONFIG` overrides the path), written with mode 0600.
+
+## `pkv list`
+
+```sh
+pkv list            # NAME  SITE  ACCOUNT
+pkv list --json
+```
+
+Shows what the vault holds. Never shows values; reading a value always goes through `pkv run` and an
+approval.
+
 ## `pkv run`
 
 ```
@@ -30,7 +58,7 @@ Use `--` when you can; use `-c` when you need pipes, redirection or here-strings
 |---|---|---|
 | `--env NAME` | `PKV_SECRET` | environment variable that receives the secret |
 | `--stdin` | off | write the secret to the command's stdin instead of an environment variable |
-| `--server URL` | `$PKV_SERVER`, else `http://127.0.0.1:8741` | the server's requester endpoint |
+| `--server URL` | `$PKV_SERVER`, the config file, else `http://127.0.0.1:8741` | the server's requester endpoint |
 | `--timeout SECONDS` | `330` | stop waiting for a decision after this long |
 | `--key-bits N` | `3072` | size of the one-time RSA key (2048, 3072 or 4096) |
 
@@ -72,7 +100,7 @@ Requests to a loopback server never go through `HTTP_PROXY`/`HTTPS_PROXY` from t
 ```python
 from passkey_vault_client import Client, RequestDenied, RequestExpired
 
-client = Client("http://127.0.0.1:8741")
+client = Client("http://127.0.0.1:8741", token="pkvr_...")
 request = client.request("github", "gh auth login --with-token")
 print("Approve at", request.approve_url)
 
@@ -84,7 +112,8 @@ except (RequestDenied, RequestExpired):
 
 | Name | Description |
 |---|---|
-| `Client(base_url, http_timeout=10)` | connection to the requester endpoint |
+| `Client(base_url, token=None, http_timeout=10)` | connection to the requester endpoint |
+| `Client.list_secrets()` | the vault's items as `SecretInfo(name, site, account, updated_at)` |
 | `Client.request(secret, command, key_bits=3072)` | create a request; returns an `ApprovalRequest` |
 | `ApprovalRequest.approve_url`, `.expires_at`, `.id` | what to show the approver |
 | `ApprovalRequest.poll(wait=30)` | one long poll; returns a `PollResult(status, ciphertext)` |

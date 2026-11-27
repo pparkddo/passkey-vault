@@ -50,6 +50,8 @@ Drop `[postgres,mongodb]` if you use file storage.
 | `--data-dir` | | required (except with `--dev`) |
 | `--storage` | `PASSKEY_VAULT_STORAGE` | file storage in the data directory |
 | `--requester-hosts` | `PASSKEY_VAULT_REQUESTER_HOSTS` | loopback only |
+| | `PASSKEY_VAULT_REQUESTER_TOKEN` | generated into the data directory |
+| `--no-requester-token` | `PASSKEY_VAULT_REQUESTER_AUTH=off` | token required |
 | `--bind` | | `127.0.0.1` |
 | `--approver-port`, `--requester-port` | | 8740, 8741 |
 | `--dev` | | origin `http://localhost:8740`, data in `./data`, setup code printed |
@@ -81,6 +83,17 @@ The requester door is loopback-only by default. To let requesters on other machi
 3. Prefer a private network or TLS between requesters and the server. The door releases nothing on
    its own (only ciphertext for a one-time key, after approval), but there is no reason to expose it
    publicly.
+
+## Requester token
+
+Requesters must send a token with every call. By default the server generates one on first start and
+keeps it in `<data-dir>/requester-token` (mode 0600). On a platform with a secrets store, set
+`PASSKEY_VAULT_REQUESTER_TOKEN` (at least 32 characters) instead. Give the token to `pkv setup` on the
+requester's machine.
+
+The token keeps strangers from filling your approval screen with requests; it does not protect secrets
+(approval does). Turn it off with `--no-requester-token` or `PASSKEY_VAULT_REQUESTER_AUTH=off` only when
+nobody else can reach the requester door.
 
 ## First-time setup
 

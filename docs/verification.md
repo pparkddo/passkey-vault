@@ -7,7 +7,7 @@ What is covered by automated tests, and what still needs a real device. Last upd
 | Area | Test | Command |
 |---|---|---|
 | Byte rules: server, approval page and client | `tests/test_vectors.py`, `tests/js/vectors.test.mjs`, `tests/test_client_vectors.py` (also on Python 3.10 in CI) | `uv run python -m unittest tests/test_vectors.py tests/test_client_vectors.py`, `node --test 'tests/js/*.test.mjs'` |
-| `pkv` CLI against a real server: argv, stdin and shell modes, exit codes, unreachable server | `tests/test_cli.py` | `uv run python -m unittest tests/test_cli.py` |
+| `pkv` CLI against a real server: setup (saved only after a successful check, mode 0600), list, argv/stdin/shell modes, exec and signal forwarding, proxy bypass, exit codes | `tests/test_cli.py` | `uv run python -m unittest tests/test_cli.py` |
 | Both packages build; the server wheel carries the approval page | CI `uv build --all-packages` | `uv build --all-packages` |
 | Server: setup, approval, denial, expiry, single delivery, signature binding, nonces, sign counters, `Host`/`Origin`/content-type checks, keep-alive handling | `tests/test_server.py` | `uv run python -m unittest tests/test_server.py` |
 | Storage contract (file, PostgreSQL, MongoDB), including concurrent compare-and-swap, plus the full server flow on each database | `tests/test_storage.py` | see the file header for the database URLs |

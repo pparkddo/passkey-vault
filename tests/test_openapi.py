@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from passkey_vault.approver_api import ApproverHandler  # noqa: E402
 from passkey_vault.http_common import BaseHandler  # noqa: E402
 from passkey_vault.requester_api import RequesterHandler  # noqa: E402
-from test_server import ServerTestBase, raw_request  # noqa: E402
+from test_server import ServerTestBase  # noqa: E402
 
 SPECS = {
     name: yaml.safe_load((ROOT / "docs/openapi" / f"{name}.yaml").read_text()) for name in ("requester", "approver")
@@ -80,18 +80,20 @@ class ResponsesMatchSpec(ServerTestBase):
     def test_all_responses_match(self) -> None:
         # Exercise every operation, including error paths.
         self.approver.state()
+        self.requester_raw("GET", "/secrets")  # 409 before setup
         self.init_vault()
+        self.requester_raw("GET", "/secrets")
+        self.requester_raw("GET", "/secrets", headers={"Authorization": "Bearer wrong"})  # 401
         req = self.new_request()
         req.poll(0)
         self.approver.approve(req.id)
         req.poll(0)
-        raw_request(self.requester_port, "GET", f"/requests/{req.id}")  # 410
+        self.requester_raw("GET", f"/requests/{req.id}")  # 410
         denied = self.new_request()
         self.approver.deny(denied.id)
         denied.poll(0)
-        raw_request(self.requester_port, "POST", "/requests", b"{}", {"Content-Type": "text/plain"})  # 415
-        raw_request(
-            self.requester_port,
+        self.requester_raw("POST", "/requests", b"{}", {"Content-Type": "text/plain"})  # 415
+        self.requester_raw(
             "POST",
             "/requests",
             json.dumps({"secret": "nope", "command": "x", "pubkey": "AA"}).encode(),

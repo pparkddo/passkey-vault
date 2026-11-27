@@ -10,15 +10,43 @@ info:
     The secret is returned encrypted with RSA-OAEP to a one-time key the requester generated, with an
     OAEP label that binds the request id, the exact command and the public key. See docs/interface.md
     for the byte-level rules and test-vectors/ for vectors.
+
+    Every call carries the requester token (`Authorization: Bearer ...`) unless the server runs with
+    requester authentication turned off. The token only limits who can create requests; secrets are
+    protected by the approver's passkey.
   license:
     name: MIT
     identifier: MIT
+security:
+  - requesterToken: []
 servers:
   - url: http://127.0.0.1:8741
     description: requester door (loopback only)
 tags:
+  - name: secrets
   - name: requests
 paths:
+  /secrets:
+    get:
+      tags: [secrets]
+      operationId: listSecrets
+      summary: List the vault's secrets
+      description: Names and metadata only; never secret values or ciphertext.
+      responses:
+        "200":
+          description: The vault's items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secrets]
+                properties:
+                  secrets:
+                    type: array
+                    items: { $ref: "#/components/schemas/SecretInfo" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "421": { $ref: "#/components/responses/Error" }
   /requests:
     post:
       tags: [requests]
@@ -43,6 +71,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CreatedRequest" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "411": { $ref: "#/components/responses/Error" }
@@ -75,14 +104,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RequestResult" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "410": { $ref: "#/components/responses/Error" }
         "421": { $ref: "#/components/responses/Error" }
 components:
+  securitySchemes:
+    requesterToken:
+      type: http
+      scheme: bearer
+      description: The requester token from the server's data directory (`requester-token`) or its configuration.
   responses:
     Error:
       description: |
-        Error. `error` is a stable machine-readable code: bad_request, invalid_secret_name,
+        Error. `error` is a stable machine-readable code: unauthorized, bad_request, invalid_secret_name,
         invalid_command, invalid_pubkey, key_too_small, unknown_secret, not_found, consumed,
         vault_not_initialized, length_required, payload_too_large, unsupported_media_type, bad_host, too_many_pending,
         method_not_allowed.
@@ -90,6 +125,14 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    SecretInfo:
+      type: object
+      required: [name, site, account, updated_at]
+      properties:
+        name: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
+        site: { type: string }
+        account: { type: string }
+        updated_at: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
     RequestId:
       type: string
       pattern: "^[A-Za-z0-9_-]{22}$"

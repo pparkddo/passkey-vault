@@ -65,7 +65,9 @@ class DockerTests(unittest.TestCase):
             approver = SoftApprover(ORIGIN.replace("localhost", "127.0.0.1"), "localhost", ORIGIN)
             self.assertEqual(approver.setup(code)[0], 201)
             self.assertEqual(approver.put_item("github", "github.com", "me", SECRET)[0], 200)
-            req = Client("http://127.0.0.1:8741").request("github", "echo from-container", key_bits=2048)
+            token = compose("exec", "-T", "passkey-vault", "cat", "/data/requester-token", env=env).stdout.strip()
+            self.assertRegex(token, r"^pkvr_[A-Za-z0-9_-]{43}$")
+            req = Client("http://127.0.0.1:8741", token).request("github", "echo from-container", key_bits=2048)
             self.assertEqual(approver.approve(req.id)[0], 200)
             self.assertEqual(req.wait().decode(), SECRET)
 

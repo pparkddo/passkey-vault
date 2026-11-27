@@ -21,7 +21,7 @@ from passkey_vault import formats as f  # noqa: E402
 from passkey_vault.app import App  # noqa: E402
 from passkey_vault.config import Config  # noqa: E402
 from passkey_vault.requests_queue import RequestQueue  # noqa: E402
-from passkey_vault_client import ApprovalRequest, Client, PkvError  # noqa: E402
+from passkey_vault_client import ApprovalRequest, Client, PkvError, ServerError  # noqa: E402
 from soft_approver import SoftApprover, SoftAuthenticator  # noqa: E402
 
 ORIGIN = "http://localhost:8740"
@@ -72,6 +72,16 @@ class ServerTestBase(unittest.TestCase):
     def requester_url(self) -> str:
         return f"http://127.0.0.1:{self.app.ports[1]}"
 
+    def requester_client(self) -> Client:
+        return Client(self.requester_url, self.app.requester_token)
+
+    def requester_raw(
+        self, method: str, path: str, body: bytes | None = None, headers: dict | None = None
+    ) -> tuple[int, dict, dict]:
+        """Raw HTTP to the requester door, with the requester token unless headers override it."""
+        auth = {"Authorization": f"Bearer {self.app.requester_token}"}
+        return raw_request(self.app.ports[1], method, path, body, {**auth, **(headers or {})})
+
     def tearDown(self) -> None:
         self.app.stop()
         self.tmp.cleanup()
@@ -85,7 +95,7 @@ class ServerTestBase(unittest.TestCase):
     def new_request(
         self, command: str = "printenv PASSKEY_VAULT_SECRET", secret: str = "github", bits: int = 2048
     ) -> ApprovalRequest:
-        return Client(self.requester_url).request(secret, command, key_bits=bits)
+        return self.requester_client().request(secret, command, key_bits=bits)
 
     def fake_clock(self, start: float = 1000.0) -> list[float]:
         """Swap in a request queue driven by a fake clock; advance it with clock[0] += seconds."""
@@ -151,10 +161,10 @@ class ApprovalFlowTests(ServerTestBase):
         self.assertEqual(req.poll(wait=0).status, "pending")
         st, body = self.approver.approve(req.id)
         self.assertEqual(st, 200, body)
-        st, body, _ = raw_request(self.requester_port, "GET", f"/requests/{req.id}")
+        st, body, _ = self.requester_raw("GET", f"/requests/{req.id}")
         self.assertEqual((st, body["status"]), (200, "approved"))
         self.assertEqual(req.decrypt(f.b64url_decode(body["ciphertext"])).decode(), SECRET)
-        st, body, _ = raw_request(self.requester_port, "GET", f"/requests/{req.id}")
+        st, body, _ = self.requester_raw("GET", f"/requests/{req.id}")
         self.assertEqual((st, body["error"]), (410, "consumed"), "the ciphertext is delivered once")
 
     def test_long_poll_wakes_on_approval(self) -> None:
@@ -254,7 +264,7 @@ class ApprovalFlowTests(ServerTestBase):
                 self.assertEqual(concurrent, {"status": "pending"}, "a concurrent poll waits")
             raise BrokenPipeError
         self.assertEqual(req.decrypt(req.poll(0).ciphertext).decode(), SECRET)
-        self.assertEqual(raw_request(self.requester_port, "GET", f"/requests/{req.id}")[0], 410)
+        self.assertEqual(self.requester_raw("GET", f"/requests/{req.id}")[0], 410)
 
     def test_approval_with_zero_counter_writes_nothing(self) -> None:
         req = self.new_request()
@@ -301,9 +311,9 @@ class RequesterApiValidationTests(ServerTestBase):
         )
 
     def post(self, body: dict) -> tuple[int, dict]:
-        return raw_request(
-            self.requester_port, "POST", "/requests", json.dumps(body).encode(), {"Content-Type": "application/json"}
-        )[:2]
+        return self.requester_raw("POST", "/requests", json.dumps(body).encode(), {"Content-Type": "application/json"})[
+            :2
+        ]
 
     def test_errors(self) -> None:
         ok = {"secret": "github", "command": "ls", "pubkey": self.pub}
@@ -330,21 +340,19 @@ class RequesterApiValidationTests(ServerTestBase):
     def test_host_content_type_and_limits(self) -> None:
         body = json.dumps({"secret": "github", "command": "ls", "pubkey": self.pub}).encode()
         json_ct = {"Content-Type": "application/json"}
-        st, resp, _ = raw_request(
-            self.requester_port, "POST", "/requests", body, {**json_ct, "Host": "evil.example:80"}
-        )
+        st, resp, _ = self.requester_raw("POST", "/requests", body, {**json_ct, "Host": "evil.example:80"})
         self.assertEqual((st, resp["error"]), (421, "bad_host"))
-        st, resp, _ = raw_request(self.requester_port, "POST", "/requests", body, {"Content-Type": "text/plain"})
+        st, resp, _ = self.requester_raw("POST", "/requests", body, {"Content-Type": "text/plain"})
         self.assertEqual((st, resp["error"]), (415, "unsupported_media_type"))
-        st, resp, _ = raw_request(self.requester_port, "POST", "/requests", b"x" * 70000, json_ct)
+        st, resp, _ = self.requester_raw("POST", "/requests", b"x" * 70000, json_ct)
         self.assertEqual((st, resp["error"]), (413, "payload_too_large"))
-        self.assertEqual(raw_request(self.requester_port, "GET", "/requests/AAAAAAAAAAAAAAAAAAAAAA?wait=31")[0], 400)
-        st, resp, _ = raw_request(self.requester_port, "GET", "/requests/AAAAAAAAAAAAAAAAAAAAAA")
+        self.assertEqual(self.requester_raw("GET", "/requests/AAAAAAAAAAAAAAAAAAAAAA?wait=31")[0], 400)
+        st, resp, _ = self.requester_raw("GET", "/requests/AAAAAAAAAAAAAAAAAAAAAA")
         self.assertEqual((st, resp["error"]), (404, "not_found"))
-        self.assertEqual(raw_request(self.requester_port, "DELETE", "/requests")[0], 405)
+        self.assertEqual(self.requester_raw("DELETE", "/requests")[0], 405)
 
     def test_requester_door_has_no_approver_api(self) -> None:
-        self.assertEqual(raw_request(self.requester_port, "GET", "/api/state")[0], 404)
+        self.assertEqual(self.requester_raw("GET", "/api/state")[0], 404)
 
 
 class ApproverApiTests(ServerTestBase):
@@ -487,6 +495,69 @@ class ApproverApiTests(ServerTestBase):
         self.assertEqual((st, body["error"]), (400, "invalid_webauthn"))
 
 
+class RequesterAuthTests(ServerTestBase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.init_vault()
+
+    def test_token_required_and_checked(self) -> None:
+        token = self.app.requester_token
+        self.assertRegex(token, r"^pkvr_[A-Za-z0-9_-]{43}$")
+        self.assertEqual(self.app.config.requester_token_path.stat().st_mode & 0o777, 0o600)
+        for headers in ({"Authorization": ""}, {"Authorization": "Bearer wrong"}, {"Authorization": token}):
+            st, body, hdrs = self.requester_raw("GET", "/secrets", headers=headers)
+            self.assertEqual((st, body["error"]), (401, "unauthorized"), headers)
+            self.assertIn("Bearer", hdrs["WWW-Authenticate"])
+        with self.assertRaises(ServerError) as cm:
+            Client(self.requester_url).request("github", "true", key_bits=2048)
+        self.assertEqual(cm.exception.code, "unauthorized")
+        self.assertEqual(self.approver.state()["pending"], [], "no request was created")
+
+    def test_token_survives_restart(self) -> None:
+        token = self.app.requester_token
+        self.app.stop()
+        self.app = App(self.app.config)
+        self.app.start()
+        self.assertEqual(self.app.requester_token, token)
+
+    def test_list_secrets(self) -> None:
+        self.approver.put_item("aws", "aws.amazon.com", "ops", "x")
+        secrets = self.requester_client().list_secrets()
+        self.assertEqual(
+            [(s.name, s.site, s.account) for s in secrets],
+            [("aws", "aws.amazon.com", "ops"), ("github", "github.com", "me@example.com")],
+        )
+        st, body, _ = self.requester_raw("GET", "/secrets")
+        self.assertEqual(st, 200)
+        self.assertNotIn(SECRET, json.dumps(body, ensure_ascii=False))
+        self.assertEqual(set(body["secrets"][0]), {"name", "site", "account", "updated_at"})
+
+
+class RequesterAuthOffTests(ServerTestBase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        cfg = make_config(Path(self.tmp.name) / "data")
+        self.app = App(Config(**{**cfg.__dict__, "requester_auth": False}))
+        self.app.start()
+        self.approver = SoftApprover(f"http://127.0.0.1:{self.app.ports[0]}", "localhost", ORIGIN)
+        self.setup_code = self.app.vault.ensure_setup_code()
+
+    def test_no_token_needed_when_turned_off(self) -> None:
+        self.init_vault()
+        self.assertIsNone(self.app.requester_token)
+        self.assertFalse(self.app.config.requester_token_path.exists())
+        self.assertEqual([s.name for s in Client(self.requester_url).list_secrets()], ["github"])
+
+    def test_fixed_token_from_configuration(self) -> None:
+        from passkey_vault.app import load_requester_token
+
+        cfg = make_config(Path(self.tmp.name) / "fixed")
+        fixed = Config(**{**cfg.__dict__, "requester_token": "x" * 40})
+        self.assertEqual(load_requester_token(fixed), "x" * 40)
+        with self.assertRaises(ValueError):
+            load_requester_token(Config(**{**cfg.__dict__, "requester_token": "short"}))
+
+
 class ConfigTests(unittest.TestCase):
     def test_origin_is_normalized_like_browsers(self) -> None:
         from passkey_vault.config import normalize_origin, parse_args
@@ -518,7 +589,7 @@ class PersistenceTests(ServerTestBase):
         self.approver.base = f"http://127.0.0.1:{self.approver_port}"
         self.assertTrue(self.app.vault.initialized)
         self.assertIsNone(self.app.vault.ensure_setup_code())
-        req.client = Client(self.requester_url)
+        req.client = self.requester_client()
         with self.assertRaises(PkvError):
             req.poll(0)
         req2 = self.new_request("true")

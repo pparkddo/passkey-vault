@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import re
 from typing import ClassVar
 
@@ -41,6 +42,26 @@ class RequesterHandler(BaseHandler):
         # Blocks DNS rebinding: a browser tricked into calling this door sends the attacker's host name.
         if host_name(self.headers.get("Host")) not in LOOPBACK_HOSTS | set(self.app.config.requester_hosts):
             raise ApiError(421, "bad_host", "this host name is not accepted by the requester door")
+        # Keeps strangers from filling the approver's screen with requests. It does not protect secrets:
+        # nothing is released without a passkey approval.
+        token = self.app.requester_token
+        if token is not None:
+            auth = self.headers.get("Authorization") or ""
+            given = auth[7:] if auth[:7].lower() == "bearer " else ""
+            if not hmac.compare_digest(given.encode(), token.encode()):
+                raise ApiError(401, "unauthorized", "missing or wrong requester token")
+
+    def route_list_secrets(self) -> None:
+        doc = self.app.vault.require_initialized()
+        self.send_json(
+            200,
+            {
+                "secrets": [
+                    {"name": n, "site": it["site"], "account": it["account"], "updated_at": it["updated_at"]}
+                    for n, it in sorted(doc["items"].items())
+                ]
+            },
+        )
 
     def route_create_request(self) -> None:
         body = self.read_object()
@@ -73,6 +94,7 @@ class RequesterHandler(BaseHandler):
             self.wfile.flush()
 
     routes: ClassVar[list[Route]] = [
+        ("GET", re.compile(r"/secrets"), route_list_secrets),
         ("POST", re.compile(r"/requests"), route_create_request),
         ("GET", re.compile(r"/requests/([^/]+)"), route_collect),
     ]

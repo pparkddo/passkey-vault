@@ -71,15 +71,18 @@ support the WebAuthn PRF extension (check yours with [`tools/prf-test.html`](too
 ```sh
 git clone https://github.com/pparkddo/passkey-vault && cd passkey-vault
 docker compose up -d
-docker compose exec passkey-vault cat /data/setup-code
+docker compose exec passkey-vault cat /data/setup-code        # for the approval page
+docker compose exec passkey-vault cat /data/requester-token   # for pkv
 ```
 
 Open <http://localhost:8740>, enter the setup code, create your passkey and add a secret named `github`.
 
-**2. Install `pkv`** on the machine where your agent or scripts run
+**2. Install and set up `pkv`** on the machine where your agent or scripts run
 
 ```sh
 uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+pkv setup        # server URL and requester token; checked before saving
+pkv list         # what the vault holds (names only)
 ```
 
 **3. Use a secret**
@@ -101,7 +104,8 @@ it. See [deployment](docs/deployment.md).
 Tell the agent how to ask, for example in `AGENTS.md` or `CLAUDE.md`:
 
 ```markdown
-When a command needs a password or token, do not ask me for it. Run it through pkv:
+When a command needs a password or token, do not ask me for it. `pkv list` shows the available
+secret names. Run the command through pkv:
 
     pkv run <secret-name> --stdin -- <command that reads the secret from stdin>
     pkv run <secret-name> -c '<shell command that uses "$PKV_SECRET">'
@@ -148,6 +152,8 @@ against the [test vectors](test-vectors). Full reference: [`pkv` and the SDK](do
 | `--origin` | `PASSKEY_VAULT_ORIGIN` (Compose) | `http://localhost:8740` in Compose |
 | `--storage` | `PASSKEY_VAULT_STORAGE` | file storage in `--data-dir` |
 | `--requester-hosts` | `PASSKEY_VAULT_REQUESTER_HOSTS` | loopback only |
+| requester token | `PASSKEY_VAULT_REQUESTER_TOKEN` | generated into `<data-dir>/requester-token` |
+| `--no-requester-token` | `PASSKEY_VAULT_REQUESTER_AUTH=off` | token required |
 | `--approver-port` / `--requester-port` | | `8740` / `8741` |
 
 Storage URLs look like `postgresql://user:pass@host/db` or `mongodb://host/db`. All options are in

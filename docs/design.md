@@ -45,6 +45,9 @@ The server listens on two ports with different audiences:
 | Approver door | 8740 | the approval page | behind an HTTPS reverse proxy; its origin is the WebAuthn RP ID |
 | Requester door | 8741 | requesters | loopback by default; a private network if requesters run elsewhere |
 
+Requesters authenticate with a bearer token (on by default; generated into the data directory). It
+decides who may create requests and list item names; it never releases anything by itself.
+
 Both bind to `127.0.0.1` unless `--bind` says otherwise (the container image binds `0.0.0.0` and
 publishes to loopback). The requester door only accepts `Host` names in its allow list (loopback plus
 `--requester-hosts`), which stops browsers from being used against it through DNS rebinding.

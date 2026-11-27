@@ -82,6 +82,8 @@ class BaseHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if self.close_connection or self._unread_body():
             self.send_header("Connection", "close")
+        if status == 401:
+            self.send_header("WWW-Authenticate", 'Bearer realm="passkey-vault"')
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

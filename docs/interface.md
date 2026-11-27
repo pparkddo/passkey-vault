@@ -10,6 +10,16 @@ RFC 2119.
 - The `Host` header MUST name a host the server accepts (loopback, or one listed in
   `--requester-hosts`). Ordinary HTTP clients do this automatically.
 - Request bodies MUST be `application/json` and at most 64 KiB. Responses are JSON.
+- Every request MUST carry the requester token as `Authorization: Bearer <token>`, unless the server
+  runs with requester authentication turned off. The token is in the server's data directory
+  (`requester-token`) or set by its operator. It only limits who can create requests; nothing is
+  released without the approver's passkey.
+
+### 1.0 `GET /secrets`
+
+Lists the vault's items: `{"secrets": [{"name", "site", "account", "updated_at"}, ...]}`, sorted by
+name. Never includes secret values or ciphertext. Useful to check a connection and the token, and to
+discover names.
 
 ### 1.1 `POST /requests`
 
@@ -64,6 +74,7 @@ Errors are `{"error": "<code>", "message": "<text>"}`. Codes are stable; message
 | HTTP | `error` | Meaning |
 |---|---|---|
 | 400 | `bad_request` | Malformed JSON, missing fields, `wait` out of range |
+| 401 | `unauthorized` | Missing or wrong requester token |
 | 400 | `invalid_secret_name` | `secret` does not match the pattern |
 | 400 | `invalid_command` | `command` breaks the length or character rules |
 | 400 | `invalid_pubkey` | Not a SPKI RSA key, exponent ≠ 65537, or larger than 4096 bits |

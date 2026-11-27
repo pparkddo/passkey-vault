@@ -11,6 +11,7 @@ from .client import (
     RequestDenied,
     RequestExpired,
     RequestTimeout,
+    SecretInfo,
     ServerError,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "RequestDenied",
     "RequestExpired",
     "RequestTimeout",
+    "SecretInfo",
     "ServerError",
     "__version__",
 ]

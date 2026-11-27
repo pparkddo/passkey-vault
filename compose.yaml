@@ -32,6 +32,8 @@ services:
       # Empty means file storage in /data. The profiles below set this through .env or the shell.
       PASSKEY_VAULT_STORAGE: ${PASSKEY_VAULT_STORAGE:-}
       PASSKEY_VAULT_REQUESTER_HOSTS: ${PASSKEY_VAULT_REQUESTER_HOSTS:-}
+      # Empty: a token is generated into /data/requester-token. Set it to supply your own (32+ chars).
+      PASSKEY_VAULT_REQUESTER_TOKEN: ${PASSKEY_VAULT_REQUESTER_TOKEN:-}
     ports:
       - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8740:8740"
       - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8741:8741"

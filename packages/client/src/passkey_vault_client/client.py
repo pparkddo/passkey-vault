@@ -57,6 +57,16 @@ class RequestTimeout(PkvError):
 
 
 @dataclass(frozen=True)
+class SecretInfo:
+    """What the vault holds under a name. Never includes the secret itself."""
+
+    name: str
+    site: str
+    account: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
 class PollResult:
     """One answer from the server. `ciphertext` is set only when status is "approved"."""
 
@@ -77,9 +87,10 @@ def _is_loopback(url: str) -> bool:
 class Client:
     """Talks to the requester door of a passkey-vault server."""
 
-    def __init__(self, base_url: str = DEFAULT_URL, http_timeout: float = 10) -> None:
+    def __init__(self, base_url: str = DEFAULT_URL, token: str | None = None, http_timeout: float = 10) -> None:
         self.base_url = base_url.rstrip("/")
         self.http_timeout = http_timeout
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         # Never send loopback traffic through an HTTP(S)_PROXY from the environment.
         handlers = [urllib.request.ProxyHandler({})] if _is_loopback(self.base_url) else []
         self._opener = urllib.request.build_opener(*handlers)
@@ -88,9 +99,8 @@ class Client:
         self, method: str, path: str, body: dict[str, Any] | None = None, timeout: float | None = None
     ) -> dict[str, Any]:
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request(
-            self.base_url + path, data=data, method=method, headers={"Content-Type": "application/json"} if data else {}
-        )
+        headers = {**self._headers, **({"Content-Type": "application/json"} if data else {})}
+        req = urllib.request.Request(self.base_url + path, data=data, method=method, headers=headers)
         try:
             with self._opener.open(req, timeout=timeout or self.http_timeout) as r:
                 result: dict[str, Any] = json.loads(r.read())
@@ -104,6 +114,11 @@ class Client:
             raise ServerError(e.code, err.get("error", "http_error"), err.get("message", str(e.reason))) from None
         except urllib.error.URLError as e:
             raise PkvError(f"cannot reach the passkey-vault server at {self.base_url}: {e.reason}") from None
+
+    def list_secrets(self) -> list[SecretInfo]:
+        """Names and metadata of the vault's items (no secrets). Also a cheap connectivity check."""
+        body = self._call("GET", "/secrets")
+        return [SecretInfo(s["name"], s["site"], s["account"], s["updated_at"]) for s in body["secrets"]]
 
     def request(self, secret: str, command: str, key_bits: int = 3072) -> ApprovalRequest:
         """Ask for `secret` to be used for exactly `command` (shown verbatim to the approver)."""

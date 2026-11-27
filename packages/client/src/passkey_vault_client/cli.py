@@ -1,5 +1,7 @@
 """pkv: run one command with one secret, after a passkey approval.
 
+    pkv setup                                              # once: server URL and requester token
+    pkv list                                               # what the vault holds (names, no secrets)
     pkv run github -- gh auth login --with-token          # argv, no shell
     pkv run github -c 'curl -u "me:$PKV_SECRET" https://example.com'   # through the shell
     pkv run github --stdin -- gh auth login --with-token  # secret on stdin instead of an env var
@@ -11,6 +13,9 @@ one process (default variable PKV_SECRET) or written to its stdin, and nowhere e
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import getpass
+import json
 import os
 import re
 import shlex
@@ -19,8 +24,8 @@ import subprocess
 import sys
 from typing import NoReturn
 
-from . import __version__
-from .client import DEFAULT_URL, Client, PkvError, RequestDenied, RequestExpired, RequestTimeout
+from . import __version__, config
+from .client import DEFAULT_URL, Client, PkvError, RequestDenied, RequestExpired, RequestTimeout, ServerError
 
 EXIT_DENIED = 3
 EXIT_EXPIRED = 4  # expired or timed out
@@ -47,20 +52,35 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=f"pkv {__version__}")
     sub = p.add_subparsers(dest="action", required=True)
 
+    server = argparse.ArgumentParser(add_help=False)
+    server.add_argument(
+        "--server",
+        default=None,
+        help=f"requester endpoint (env PKV_SERVER, then the config file, default {DEFAULT_URL}); "
+        "the requester token comes from PKV_TOKEN or the config file",
+    )
+
+    setup = sub.add_parser(
+        "setup",
+        parents=[server],
+        help="save the server URL and requester token, after checking them",
+        description="Check the server URL and requester token, then save them to the config file.",
+    )
+    setup.add_argument("--token-stdin", action="store_true", help="read the requester token from stdin")
+
+    listing = sub.add_parser("list", parents=[server], help="list the vault's secrets (names only, no values)")
+    listing.add_argument("--json", action="store_true", help="print JSON")
+
     shell = "cmd /c" if WINDOWS else "/bin/sh -c"
     run = sub.add_parser(
         "run",
+        parents=[server],
         help="request a secret and run one command with it",
         description="Request SECRET for one command, wait for approval, then run the command once.",
         epilog="Give the command after --, e.g.  pkv run github -- gh auth login --with-token",
     )
     run.add_argument("secret", help="name of the vault item")
     run.add_argument("-c", dest="shell_command", metavar="COMMAND", help=f"run COMMAND with {shell}")
-    run.add_argument(
-        "--server",
-        default=os.environ.get("PKV_SERVER", DEFAULT_URL),
-        help=f"requester endpoint (env PKV_SERVER, default {DEFAULT_URL})",
-    )
     run.add_argument(
         "--env",
         type=_env_name,
@@ -128,16 +148,72 @@ def _run_child(argv: list[str], env: dict[str, str] | None, stdin_data: bytes | 
             signal.signal(s, handler)
 
 
+def _setup(args: argparse.Namespace) -> int:
+    saved = config.load_file() or config.Settings()
+    interactive = sys.stdin.isatty()
+    server = args.server or os.environ.get("PKV_SERVER")
+    if not server and interactive:
+        server = input(f"Server URL [{saved.server}]: ").strip()
+    server = server or saved.server
+    if os.environ.get("PKV_TOKEN"):
+        token: str | None = os.environ["PKV_TOKEN"]
+    elif args.token_stdin:
+        token = sys.stdin.readline().strip()
+    elif interactive:
+        token = getpass.getpass("Requester token (from the server's data directory; empty if it has none): ").strip()
+    else:
+        token = saved.token
+    token = token or None
+
+    try:
+        secrets = Client(server, token).list_secrets()
+        names = ", ".join(s.name for s in secrets) or "none yet"
+        _say(f"connected to {server}: {len(secrets)} secret(s): {names}")
+    except ServerError as e:
+        if e.code != "vault_not_initialized":
+            _say(f"not saved: {e}")
+            return EXIT_ERROR
+        _say(f"connected to {server}; the vault is not set up yet (open the approval page to set it up)")
+    except PkvError as e:
+        _say(f"not saved: {e}")
+        return EXIT_ERROR
+    path = config.save(config.Settings(server=server, token=token))
+    _say(f"saved to {path}")
+    return 0
+
+
+def _list(args: argparse.Namespace) -> int:
+    settings = config.resolve(args.server)
+    try:
+        secrets = Client(settings.server, settings.token).list_secrets()
+    except PkvError as e:
+        _say(str(e))
+        return EXIT_ERROR
+    if args.json:
+        print(json.dumps([dataclasses.asdict(s) for s in secrets], indent=2))
+        return 0
+    rows = [("NAME", "SITE", "ACCOUNT"), *((s.name, s.site, s.account) for s in secrets)]
+    widths = [max(len(r[i]) for r in rows) for i in range(2)]
+    for name, site, account in rows:
+        print(f"{name:<{widths[0]}}  {site:<{widths[1]}}  {account}".rstrip())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     # Everything after the first "--" is the command, verbatim; only what comes before is pkv's own.
     own, command = (argv[: argv.index("--")], argv[argv.index("--") + 1 :]) if "--" in argv else (argv, [])
     parser = _parser()
     args = parser.parse_args(own)
+    if args.action == "setup":
+        return _setup(args)
+    if args.action == "list":
+        return _list(args)
     shown, exec_argv = _command(args, command, parser)
+    settings = config.resolve(args.server)
 
     try:
-        request = Client(args.server).request(args.secret, shown, key_bits=args.key_bits)
+        request = Client(settings.server, settings.token).request(args.secret, shown, key_bits=args.key_bits)
         _say(f"approve using {args.secret} for this command: {request.approve_url}")
         _say(f"waiting (the link expires at {request.expires_at})")
         secret = request.wait(timeout=args.timeout)
