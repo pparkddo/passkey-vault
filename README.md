@@ -201,7 +201,8 @@ uv run python tests/e2e_virtual_authenticator.py         # end to end in Chromiu
 ```
 
 Database, container and deployment tests are opt-in; see [verification](docs/verification.md).
-Contributions are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md); releases follow [RELEASING.md](RELEASING.md).
 
 ## Status
 

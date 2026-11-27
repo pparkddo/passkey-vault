@@ -11,3 +11,6 @@ Issues and pull requests are welcome.
   and the tests listed in the README before opening a pull request. New storage backends must pass
   `tests/test_storage.py`.
 - Security issues go through [SECURITY.md](SECURITY.md), not public issues.
+- Add a line under `## [Unreleased]` in `CHANGELOG.md` for user-visible changes.
+- After changing dependencies (`uv.lock`), run `scripts/export-locks.sh`.
+- Releases are cut by maintainers; see [RELEASING.md](RELEASING.md).
