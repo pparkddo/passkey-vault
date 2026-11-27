@@ -56,9 +56,20 @@ jobs:
     needs: python
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # One environment per project: PyPI accepts a given (repository, workflow, environment) publisher
+    # for only one pending project, and separate environments also mean separate approvals.
+    strategy:
+      matrix:
+        include:
+          - project: passkey-vault-server
+            files: passkey_vault_server-*
+            environment: pypi
+          - project: passkey-vault-client
+            files: passkey_vault_client-*
+            environment: pypi-client
     environment:
-      name: pypi
-      url: https://pypi.org/project/passkey-vault-client/
+      name: ${{ matrix.environment }}
+      url: https://pypi.org/project/${{ matrix.project }}/
     permissions:
       id-token: write # PyPI Trusted Publishing: no API token is stored anywhere
     steps:
@@ -66,7 +77,11 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Select this project's files
+        run: mkdir upload && mv dist/${{ matrix.files }} upload/ && ls upload
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: upload/
 
   image:
     needs: check
