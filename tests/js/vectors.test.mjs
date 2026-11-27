@@ -1,11 +1,11 @@
 // node --test tests/js/
-// Checks test-vectors/ with the web/js modules (the same code the browser runs). No dependencies (Node 24 WebCrypto).
+// Checks test-vectors/ with the approval page modules (the same code the browser runs). No dependencies (Node 24 WebCrypto).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import * as F from '../../web/js/formats.js';
-import * as V from '../../web/js/vaultcrypto.js';
+import * as F from '../../packages/server/src/passkey_vault/web/js/formats.js';
+import * as V from '../../packages/server/src/passkey_vault/web/js/vaultcrypto.js';
 
 const load = (name) => JSON.parse(readFileSync(new URL(`../../test-vectors/${name}`, import.meta.url), 'utf8'));
 const subtle = globalThis.crypto.subtle;
