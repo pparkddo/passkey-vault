@@ -6,8 +6,8 @@ waits while you approve the request with a passkey, then runs that command once 
 ## Install
 
 ```sh
-uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
-# or: pipx install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+uv tool install passkey-vault-client
+# or: pipx install passkey-vault-client
 ```
 
 Requires Python 3.10 or later. The only dependency is `cryptography`.

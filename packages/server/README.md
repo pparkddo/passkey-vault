@@ -6,7 +6,7 @@ the browser and delivered once, encrypted to the requester's one-time key. The s
 ciphertext only.
 
 ```sh
-uv tool install "passkey-vault-server @ git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/server"
+uv tool install passkey-vault-server           # add [postgres] or [mongodb] for those backends
 passkey-vault --origin https://vault.example.com --data-dir /var/lib/passkey-vault
 ```
 

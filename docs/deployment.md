@@ -38,7 +38,7 @@ starts. Run a single server instance per vault: pending requests live in its mem
 ## Run without Docker
 
 ```sh
-uv tool install "passkey-vault-server[postgres,mongodb] @ git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/server"
+uv tool install "passkey-vault-server[postgres,mongodb]"
 passkey-vault --origin https://vault.example.com --data-dir /var/lib/passkey-vault
 ```
 

@@ -48,8 +48,7 @@ and publishes nothing.
 5. Watch the Release workflow. Afterwards, check that `uv tool install passkey-vault-client==X.Y.Z`
    and `docker pull ghcr.io/pparkddo/passkey-vault:X.Y.Z` work.
 
-After the first PyPI release, switch the install commands in `README.md`, `docs/cli.md`,
-`docs/deployment.md` and the package READMEs from the `git+https://...` form to the package names.
+When the README shows a pinned image tag (Quick start), update it to the new version.
 
 ## Dependencies
 

@@ -5,7 +5,7 @@ and the `pkv` command. It asks a passkey-vault server for one secret for one com
 approve the request with a passkey, then runs the command once with the secret.
 
 ```sh
-uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+uv tool install passkey-vault-client
 
 pkv run github --stdin -- gh auth login --with-token  # secret on stdin
 pkv run api-token -c 'curl -H "Authorization: Bearer $PKV_SECRET" https://api.example.com'

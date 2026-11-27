@@ -6,7 +6,8 @@
 
 [![CI](https://github.com/pparkddo/passkey-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/pparkddo/passkey-vault/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.15](https://img.shields.io/badge/python-3.15-blue.svg)](pyproject.toml)
+[![PyPI: passkey-vault-client](https://img.shields.io/pypi/v/passkey-vault-client?label=pkv)](https://pypi.org/project/passkey-vault-client/)
+[![PyPI: passkey-vault-server](https://img.shields.io/pypi/v/passkey-vault-server?label=server)](https://pypi.org/project/passkey-vault-server/)
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Documentation](#documentation) · [Security](#security)
 
@@ -76,11 +77,13 @@ docker compose exec passkey-vault cat /data/requester-token   # for pkv
 ```
 
 Open <http://localhost:8740>, enter the setup code, create your passkey and add a secret named `github`.
+To use the published image instead of building one, start it with
+`PASSKEY_VAULT_IMAGE=ghcr.io/pparkddo/passkey-vault:0.1.0 docker compose up -d --no-build`.
 
 **2. Install and set up `pkv`** on the machine where your agent or scripts run
 
 ```sh
-uv tool install "git+https://github.com/pparkddo/passkey-vault#subdirectory=packages/client"
+uv tool install passkey-vault-client       # or: pipx install passkey-vault-client
 pkv setup        # server URL and requester token; checked before saving
 pkv list         # what the vault holds (names only)
 ```
