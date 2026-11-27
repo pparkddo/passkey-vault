@@ -16,17 +16,12 @@ and publishes nothing.
 
 ## One-time setup
 
-- **PyPI**: add a Trusted Publisher (a "pending publisher" before the first upload) with owner
-  `pparkddo`, repository `passkey-vault` and workflow `release.yml`, using a different environment for
-  each project (PyPI allows one pending project per publisher configuration):
-
-  | Project | Environment |
-  |---|---|
-  | `passkey-vault-server` | `pypi` |
-  | `passkey-vault-client` | `pypi-client` |
-
-- **GitHub**: create the environments `pypi` and `pypi-client` (Settings → Environments), limited to
-  tags `v*`. Adding yourself as a required reviewer makes every PyPI upload wait for your approval.
+- **PyPI**: for each of `passkey-vault-server` and `passkey-vault-client`, add a Trusted Publisher with
+  owner `pparkddo`, repository `passkey-vault`, workflow `release.yml` and environment `pypi`.
+  PyPI accepts a given configuration for only one *pending* project, so for a new project register one
+  as pending, release it, then register the other and re-run its failed upload job.
+- **GitHub**: create the environment `pypi` (Settings → Environments), limited to tags `v*`. Adding
+  yourself as a required reviewer makes every PyPI upload wait for your approval.
 - **GHCR**: after the first release, make the `passkey-vault` package public (Packages → Package
   settings) so that `docker pull` works without logging in.
 
