@@ -18,9 +18,13 @@ Run once on the machine where requesters run. It asks for the server URL and the
 (input hidden), checks both against the server, and saves them only if the check passes.
 
 ```sh
-pkv setup                                   # interactive
-pkv setup --server https://vault.example.com --token-stdin < token.txt
+pkv setup                                                              # interactive: asks for both
+PKV_TOKEN=<requester-token> pkv setup --server http://127.0.0.1:8741   # non-interactive (agents, scripts)
+pkv setup --server http://<server-lan-ip>:8741 --token-stdin < token.txt
 ```
+
+The URL is the server's **requester door** (port 8741 by default), not the approval page's address.
+Without a terminal, `pkv setup` does not prompt: give the token in `PKV_TOKEN` or with `--token-stdin`.
 
 The token is in the server's data directory: `docker compose exec passkey-vault cat /data/requester-token`,
 or the value the operator configured.
@@ -100,7 +104,8 @@ Requests to a loopback server never go through `HTTP_PROXY`/`HTTPS_PROXY` from t
 ```python
 from passkey_vault_client import Client, RequestDenied, RequestExpired
 
-client = Client("http://127.0.0.1:8741", token="pkvr_...")
+client = Client.from_config()  # PKV_SERVER / PKV_TOKEN, else what `pkv setup` saved
+# or explicitly: Client("http://127.0.0.1:8741", token="<requester-token>")
 request = client.request("github", "gh auth login --with-token")
 print("Approve at", request.approve_url)
 
@@ -113,6 +118,7 @@ except (RequestDenied, RequestExpired):
 | Name | Description |
 |---|---|
 | `Client(base_url, token=None, http_timeout=10)` | connection to the requester endpoint |
+| `Client.from_config(server=None)` | a client configured like `pkv` (environment, then the config file) |
 | `Client.list_secrets()` | the vault's items as `SecretInfo(name, site, account, updated_at)` |
 | `Client.request(secret, command, key_bits=3072)` | create a request; returns an `ApprovalRequest` |
 | `ApprovalRequest.approve_url`, `.expires_at`, `.id` | what to show the approver |

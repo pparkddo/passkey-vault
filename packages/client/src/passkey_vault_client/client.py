@@ -2,7 +2,7 @@
 
     from passkey_vault_client import Client
 
-    request = Client().request("github", "gh auth login --with-token")
+    request = Client.from_config().request("github", "gh auth login --with-token")
     print("Approve at", request.approve_url)
     secret = request.wait()          # bytes; raises RequestDenied / RequestExpired / RequestTimeout
 
@@ -114,6 +114,14 @@ class Client:
             raise ServerError(e.code, err.get("error", "http_error"), err.get("message", str(e.reason))) from None
         except urllib.error.URLError as e:
             raise PkvError(f"cannot reach the passkey-vault server at {self.base_url}: {e.reason}") from None
+
+    @classmethod
+    def from_config(cls, server: str | None = None) -> Client:
+        """A client configured like `pkv`: PKV_SERVER / PKV_TOKEN, then the file written by `pkv setup`."""
+        from .config import resolve  # imported here: config imports this module
+
+        settings = resolve(server)
+        return cls(settings.server, settings.token)
 
     def list_secrets(self) -> list[SecretInfo]:
         """Names and metadata of the vault's items (no secrets). Also a cheap connectivity check."""

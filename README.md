@@ -64,8 +64,15 @@ for what it does and does not protect against.
 
 ## Quick start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/), and a browser plus passkey provider that
-support the WebAuthn PRF extension (check yours with [`tools/prf-test.html`](tools/prf-test.html)).
+Try it on one computer first: the server and `pkv` run on your computer, and you approve in that
+computer's browser with Touch ID or your password manager. To approve from your phone, follow
+[Approving from your phone](docs/phone-approval.md) instead (tested with an iPhone).
+
+You need Docker with Compose v2 (`docker compose version`), git, [uv](https://docs.astral.sh/uv/), and
+a browser with passkeys that support PRF (see [Compatibility](#compatibility)).
+
+> This setup is for trying it out with throwaway secrets. For real secrets, run the server where your
+> agent cannot change it: see [deployment](docs/deployment.md).
 
 **1. Start the server**
 
@@ -76,29 +83,32 @@ docker compose exec passkey-vault cat /data/setup-code        # for the approval
 docker compose exec passkey-vault cat /data/requester-token   # for pkv
 ```
 
-Open <http://localhost:8740>, enter the setup code, create your passkey and add a secret named `github`.
-To use the published image instead of building one, start it with
-`PASSKEY_VAULT_IMAGE=ghcr.io/pparkddo/passkey-vault:0.1.0 docker compose up -d --no-build`.
+Open <http://localhost:8740> in your browser, enter the setup code, create a passkey, and add a secret
+named `demo` with any test value. (`docker compose up -d` builds the image; to use the published one
+instead, run `PASSKEY_VAULT_IMAGE=ghcr.io/pparkddo/passkey-vault:0.1.0 docker compose up -d --no-build`.)
 
-**2. Install and set up `pkv`** on the machine where your agent or scripts run
+**2. Install and set up `pkv`**
 
 ```sh
-uv tool install passkey-vault-client       # or: pipx install passkey-vault-client
-pkv setup        # server URL and requester token; checked before saving
-pkv list         # what the vault holds (names only)
+uv tool install passkey-vault-client                                   # or: pipx install passkey-vault-client
+PKV_TOKEN=<requester-token> pkv setup --server http://127.0.0.1:8741   # checked before it is saved
+pkv list                                                               # names only, never values
 ```
 
-**3. Use a secret**
+Replace `<requester-token>` with the value printed in step 1. `pkv` always talks to the requester port
+(8741), not to the approval page.
+
+**3. Use the secret**
 
 ```sh
-pkv run github --stdin -- gh auth login --with-token   # gh reads the token from stdin
+pkv run demo -c 'echo "got ${#PKV_SECRET} characters"'
 ```
 
 `pkv` prints an approval link and waits. Open it, check the command, approve with your passkey, and
-`pkv` runs the command once with the secret on its stdin (or in `$PKV_SECRET` without `--stdin`).
+`pkv` runs the command once with the secret in `$PKV_SECRET`. Use `--stdin` for programs that read a
+secret from standard input, for example `pkv run github --stdin -- gh auth login --with-token`.
 
-For real use, serve the approval page over HTTPS and run the server where requesters cannot modify
-it. See [deployment](docs/deployment.md).
+To start over, `docker compose down -v` deletes the vault.
 
 ## Use cases
 
@@ -113,7 +123,7 @@ secret names. Run the command through pkv:
     pkv run <secret-name> --stdin -- <command that reads the secret from stdin>
     pkv run <secret-name> -c '<shell command that uses "$PKV_SECRET">'
 
-pkv prints an approval link on stderr. Show me that link and wait; I approve it on my phone.
+pkv prints an approval link on stderr. Show me that link and wait while I approve it.
 Exit code 3 means I denied it: do not retry without asking.
 ```
 
@@ -122,9 +132,10 @@ command, and the secret goes only to that one process.
 
 ### Approve from your phone while you are away
 
-Serve the approval page on an HTTPS name your phone can reach (your own domain, or a private network
-you already use). The agent's message carries the link; tapping it opens the request, and Face ID or
-Touch ID approves it. Nothing needs to be installed on the phone.
+Serve the approval page on an HTTPS address your phone can reach. The agent's message carries the link;
+tapping it opens the request, and Face ID approves it. Nothing needs to be installed on the phone.
+[Approving from your phone](docs/phone-approval.md) walks through it, from a temporary tunnel to your
+own domain.
 
 ### Scripts and scheduled jobs that should not hold a token
 
@@ -140,7 +151,7 @@ Every run asks for approval, and the audit log records who approved which comman
 ```python
 from passkey_vault_client import Client
 
-request = Client().request("github", "deploy --env production")
+request = Client.from_config().request("github", "deploy --env production")  # uses pkv's settings
 print("Approve at", request.approve_url)
 secret = request.wait()  # bytes, for exactly this command
 ```
@@ -152,7 +163,7 @@ against the [test vectors](test-vectors). Full reference: [`pkv` and the SDK](do
 
 | Option | Environment variable | Default |
 |---|---|---|
-| `--origin` | `PASSKEY_VAULT_ORIGIN` (Compose) | `http://localhost:8740` in Compose |
+| `--origin` | `PASSKEY_VAULT_ORIGIN` (Compose) | required; Compose defaults to `http://localhost:8740` |
 | `--storage` | `PASSKEY_VAULT_STORAGE` | file storage in `--data-dir` |
 | `--requester-hosts` | `PASSKEY_VAULT_REQUESTER_HOSTS` | loopback only |
 | requester token | `PASSKEY_VAULT_REQUESTER_TOKEN` | generated into `<data-dir>/requester-token` |
@@ -167,6 +178,7 @@ Storage URLs look like `postgresql://user:pass@host/db` or `mongodb://host/db`. 
 | | |
 |---|---|
 | [`pkv` and the SDK](docs/cli.md) | Commands, options, exit codes, Python API |
+| [Approving from your phone](docs/phone-approval.md) | HTTPS address for the phone, step by step |
 | [Design](docs/design.md) | Flow, cryptography, storage, approval page |
 | [Requester interface](docs/interface.md) | The public contract, with [OpenAPI](docs/openapi/requester.yaml) |
 | [Approver API](docs/openapi/approver.yaml) | Internal API used by the approval page |
@@ -184,8 +196,11 @@ Approving needs a browser and passkey provider that support the WebAuthn PRF ext
 | Chromium with a virtual authenticator (CI) | works: full flow tested on every commit |
 | Approving from another device by QR code (hybrid) | not supported: reported to give a different PRF output |
 
-To check another browser or passkey provider, open [`tools/prf-test.html`](tools/prf-test.html) over HTTPS
-on it. If PRF is missing, the approval page refuses to create a vault with that passkey.
+To check another browser or passkey provider, serve [`tools/prf-test.html`](tools/prf-test.html) and open
+it there: on the same computer, `python3 -m http.server -d tools 8000` and <http://localhost:8000/prf-test.html>;
+for a phone, put it behind a temporary tunnel as in [Approving from your phone](docs/phone-approval.md)
+(`cloudflared tunnel --url http://127.0.0.1:8000`). If PRF is missing, the approval page refuses to
+create a vault with that passkey.
 
 ## Security
 

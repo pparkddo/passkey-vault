@@ -14,7 +14,7 @@ pkv run api-token -c 'curl -H "Authorization: Bearer $PKV_SECRET" https://api.ex
 ```python
 from passkey_vault_client import Client
 
-request = Client("http://127.0.0.1:8741").request("github", "gh auth login --with-token")
+request = Client.from_config().request("github", "gh auth login --with-token")  # settings from `pkv setup`
 print("Approve at", request.approve_url)
 secret = request.wait()  # bytes
 ```

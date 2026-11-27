@@ -194,6 +194,32 @@ class CliTests(ServerTestBase):
         r = subprocess.run([PKV, "list", "--json"], env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(r.stdout)[0]["name"], "github")
 
+    def test_sdk_from_config_uses_pkv_settings(self) -> None:
+        from passkey_vault_client import Client
+
+        env = self.pkv_env()
+        cfg_env = {"PKV_CONFIG": env["PKV_CONFIG"], "PKV_SERVER": "", "PKV_TOKEN": ""}
+        r = subprocess.run(
+            [PKV, "setup", "--server", self.requester_url],
+            env={**env, **cfg_env, "PKV_TOKEN": env["PKV_TOKEN"]},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        old = {k: os.environ.get(k) for k in cfg_env}
+        os.environ.update(cfg_env)
+        try:
+            os.environ.pop("PKV_SERVER")
+            os.environ.pop("PKV_TOKEN")
+            self.assertEqual([s.name for s in Client.from_config().list_secrets()], ["github"])
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     def test_setup_refuses_a_wrong_token(self) -> None:
         env = {**self.pkv_env()}
         del env["PKV_TOKEN"]

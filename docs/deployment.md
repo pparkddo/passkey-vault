@@ -9,6 +9,9 @@
 - [ ] Storage is chosen and backed up (backups contain ciphertext only).
 - [ ] At least two passkeys are registered.
 
+For a step-by-step setup with approval on a phone, start with
+[Approving from your phone](phone-approval.md).
+
 ## Run with Docker
 
 ```sh
@@ -36,6 +39,8 @@ holds the setup code until setup is complete. The server may restart a few times
 starts. Run a single server instance per vault: pending requests live in its memory.
 
 ## Run without Docker
+
+Needs Python 3.15 or later.
 
 ```sh
 uv tool install "passkey-vault-server[postgres,mongodb]"
@@ -76,9 +81,12 @@ anything else on the same host name.
 
 ## Requesters on other hosts
 
+A worked example is in [Approving from your phone](phone-approval.md#requester-on-another-machine).
+
 The requester door is loopback-only by default. To let requesters on other machines reach it:
 
-1. Publish port 8741 on a private interface (`--bind` or `PASSKEY_VAULT_PUBLISH` for Compose).
+1. Publish port 8741 where they can reach it (`--bind`, or `PASSKEY_VAULT_REQUESTER_PUBLISH` for
+   Compose), on a private network.
 2. List the host names they use in `--requester-hosts` / `PASSKEY_VAULT_REQUESTER_HOSTS`.
 3. Prefer a private network or TLS between requesters and the server. The door releases nothing on
    its own (only ciphertext for a one-time key, after approval), but there is no reason to expose it

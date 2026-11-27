@@ -7,9 +7,10 @@
 #     docker compose --profile mongodb up -d                                            # MongoDB storage
 #   docker compose exec passkey-vault cat /data/setup-code                              # first-time setup code
 #
-# Without PASSKEY_VAULT_ORIGIN the approval page is served at http://localhost:8740 for local trials.
+# Put settings in a .env file next to this file (Compose reads it), so every `docker compose up` uses
+# the same origin. Without PASSKEY_VAULT_ORIGIN the approval page is served at http://localhost:8740.
 # Ports are published on 127.0.0.1 by default. For real use, put an HTTPS reverse proxy in front of port
-# 8740. If requesters run on other hosts, publish 8741 on a private interface (PASSKEY_VAULT_PUBLISH) and
+# 8740. If requesters run on other hosts, publish 8741 more widely (PASSKEY_VAULT_REQUESTER_PUBLISH) and
 # list the host names they use in PASSKEY_VAULT_REQUESTER_HOSTS. See docs/deployment.md.
 
 x-common: &common
@@ -37,8 +38,10 @@ services:
       # Empty: a token is generated into /data/requester-token. Set it to supply your own (32+ chars).
       PASSKEY_VAULT_REQUESTER_TOKEN: ${PASSKEY_VAULT_REQUESTER_TOKEN:-}
     ports:
-      - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8740:8740"
-      - "${PASSKEY_VAULT_PUBLISH:-127.0.0.1}:8741:8741"
+      # Each door is published on its own address. The approver door stays on loopback for a local
+      # proxy or tunnel; the requester door may be opened to a private network for remote requesters.
+      - "${PASSKEY_VAULT_APPROVER_PUBLISH:-127.0.0.1}:8740:8740"
+      - "${PASSKEY_VAULT_REQUESTER_PUBLISH:-127.0.0.1}:8741:8741"
     volumes:
       - vault-data:/data
 
