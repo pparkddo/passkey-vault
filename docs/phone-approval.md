@@ -9,11 +9,11 @@ This guide has two paths:
 - [A. Try it for an hour](#a-try-it-with-a-temporary-tunnel): a temporary Cloudflare tunnel. No
   account, no domain, nothing to install on the phone. The address changes every time, so use it only
   with throwaway secrets.
-- [B. Keep using it](#b-keep-using-it-with-your-own-domain): your own domain with a permanent Cloudflare
-  tunnel (or any HTTPS reverse proxy).
+- [B. Keep using it](#b-keep-using-it): a stable HTTPS address on whatever hosting you like: a
+  separate server or VPS, a PaaS, or a machine at home.
 
-Both assume the server runs on a computer you control and that `pkv` runs on the same computer. For a
-server on another machine, see [Requester on another machine](#requester-on-another-machine).
+For `pkv` on a different machine from the server, see
+[Requester on another machine](#requester-on-another-machine).
 
 > **Security.** Running the server on the same computer, under the same account, as an AI agent is
 > fine for trying it out but not for real secrets: the agent could change the server or the page. For
@@ -23,7 +23,7 @@ server on another machine, see [Requester on another machine](#requester-on-anot
 ## Before you start
 
 - Docker with Compose v2 (`docker compose version`), git, and [uv](https://docs.astral.sh/uv/).
-- `cloudflared` (`brew install cloudflared`, or see
+- For path A, `cloudflared` (`brew install cloudflared`, or see
   [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)).
 - A phone whose browser and passkey provider support PRF. iPhone with Apple Passwords works (see the
   README's Compatibility section).
@@ -73,38 +73,22 @@ Tested end to end with an iPhone. Every value in angle brackets is a placeholder
 The next tunnel has a different address. The old passkey cannot open a vault at a new address, so
 always start over with `docker compose down -v`.
 
-## B. Keep using it with your own domain
+## B. Keep using it
 
-You need a domain you control. A permanent tunnel needs a free Cloudflare account with the domain's DNS
-on Cloudflare. The commands below follow
-[Cloudflare's tunnel guide](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/create-local-tunnel/);
-check it if anything differs. Path A is the part we tested end to end; this part only differs in the
-tunnel.
+Run the server anywhere that gives it a **stable HTTPS address** and forwards that address to the
+approver door (port 8740). The server is the same Docker image or Python package everywhere.
 
-1. Create a tunnel and a DNS name for it, once:
+| Where | How the HTTPS address is made |
+|---|---|
+| A separate server or VPS (any cloud or hosting provider) | point a DNS name at it and put a reverse proxy in front of port 8740, e.g. Caddy, which gets the certificate itself: `caddy reverse-proxy --from vault.<your-domain> --to 127.0.0.1:8740` |
+| A PaaS that runs containers | the platform terminates HTTPS; route the public address to port 8740 and give the server a persistent volume for `/data` |
+| A machine at home or in the office | a tunnel that needs no open ports (for example a named Cloudflare tunnel to `http://127.0.0.1:8740`), or port forwarding plus a reverse proxy |
 
-   ```sh
-   cloudflared tunnel login
-   cloudflared tunnel create passkey-vault
-   cloudflared tunnel route dns passkey-vault vault.<your-domain>
-   ```
+Whichever you choose:
 
-2. Run the tunnel to the approver door, e.g. with `~/.cloudflared/config.yml`:
-
-   ```yaml
-   tunnel: passkey-vault
-   credentials-file: /Users/<you>/.cloudflared/<tunnel-id>.json
-   ingress:
-     - hostname: vault.<your-domain>
-       service: http://127.0.0.1:8740
-     - service: http_status:404
-   ```
-
-   and `cloudflared tunnel run passkey-vault` (or install it as a service:
-   `cloudflared service install`).
-
-3. Start the server with that origin. Remove any earlier vault first (`docker compose down -v`), and
-   keep the origin in `.env` so that every later `docker compose up` (after an update, a restart) uses it:
+1. Pick the address once (for example `vault.<your-domain>`). Passkeys are bound to it.
+2. Keep the origin in `.env`, so that every `docker compose up` (after an update, a restart) uses it, and
+   remove any earlier vault first (`docker compose down -v`):
 
    ```sh
    echo "PASSKEY_VAULT_ORIGIN=https://vault.<your-domain>" > .env
@@ -113,15 +97,19 @@ tunnel.
    docker compose exec passkey-vault cat /data/requester-token
    ```
 
-4. Continue with steps 3 and 4 of path A: create the passkey on the phone at `https://vault.<your-domain>`,
+   Without Docker: `passkey-vault --origin https://vault.<your-domain> --data-dir <dir>` (see
+   [deployment](deployment.md#run-without-docker)).
+3. Continue with steps 3 and 4 of path A: create the passkey on the phone at `https://vault.<your-domain>`,
    add your secrets, set up `pkv`. Register a second passkey (for example a security key) as a backup.
 
-Do not serve anything else under `vault.<your-domain>`: every page on that host name can ask your
-passkey for its PRF output.
+Keep in mind:
 
-Cloudflare terminates TLS, so it can see the traffic and could change the page it serves; secrets
-themselves stay encrypted. If you would rather not rely on Cloudflare, use any HTTPS reverse proxy you
-run yourself (for example Caddy, see [deployment](deployment.md#https-reverse-proxy)).
+- Forward only to port 8740. The requester door (8741) is for `pkv`, never for the public address.
+- Serve nothing else on that host name: every page on it can ask your passkey for its PRF output.
+- Whoever controls the proxy, the hosting account or the DNS name can change the page your phone loads.
+  Keep those out of your agent's reach (do not give it the hosting or DNS credentials).
+- A separate server from the machine your agent runs on is the simplest way to meet the
+  [deployment requirement](threat-model.md#deployment-requirement).
 
 ## Requester on another machine
 
